@@ -63,9 +63,13 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
                 ) {
                     Text("Live Interval", color = Color.White, fontSize = 16.sp)
                     Spacer(Modifier.width(12.dp))
+                    var text by remember { mutableStateOf("2") }
+
                     TextField(
-                        value = "2",
-                        onValueChange = { },
+                        value = text,
+                        onValueChange = { newValue ->
+                            text = newValue
+                        },
                         textStyle = LocalTextStyle.current.copy(color = Color.White),
                         colors = TextFieldDefaults.textFieldColors(
                             containerColor = Color.Transparent,
