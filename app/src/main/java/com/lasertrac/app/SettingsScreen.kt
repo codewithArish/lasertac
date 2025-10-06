@@ -1,124 +1,49 @@
 package com.lasertrac.app
 
-// import androidx.compose.foundation.layout.Arrangement // Removed unused import
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.GraphicEq // For Audio
-import androidx.compose.material.icons.filled.MyLocation // For Target
-import androidx.compose.material.icons.filled.Storage // For Storage
-import androidx.compose.material.icons.filled.Tune // For System/General Settings
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CenterAlignedTopAppBar
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.runtime.Composable
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lasertrac.app.ui.theme.Lasertac2Theme
-import com.lasertrac.app.ui.theme.PrimaryBlue
-import com.lasertrac.app.ui.theme.LightGrayBackground
-import com.lasertrac.app.ui.theme.DarkGrayText
-import com.lasertrac.app.ui.theme.CardBackground
-
-data class SettingItem(
-    val title: String,
-    val currentValue: String? = null, // Optional: display current value
-    val onClick: () -> Unit
-)
-
-data class SettingsCategory(
-    val title: String,
-    val icon: ImageVector,
-    val items: List<SettingItem>
-)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(onNavigateBack: () -> Unit) {
-    val settingsCategories = listOf(
-        SettingsCategory(
-            title = "Target Settings",
-            icon = Icons.Filled.MyLocation,
-            items = listOf(
-                SettingItem("Direction") { /* TODO */ },
-                SettingItem("Speed") { /* TODO */ },
-                SettingItem("Diff. Speed") { /* TODO */ },
-                SettingItem("Min. Speed") { /* TODO */ },
-                SettingItem("Max. Speed") { /* TODO */ },
-                SettingItem("Vehicle Class") { /* TODO */ }
-            )
-        ),
-        SettingsCategory(
-            title = "Audio Settings",
-            icon = Icons.Filled.GraphicEq,
-            items = listOf(
-                SettingItem("Buzzer") { /* TODO */ },
-                SettingItem("Voice") { /* TODO */ }
-            )
-        ),
-        SettingsCategory(
-            title = "Storage Settings",
-            icon = Icons.Filled.Storage,
-            items = listOf(
-                SettingItem("Keep Full Rec.") { /* TODO */ },
-                SettingItem("FTP Auto Upload") { /* TODO */ },
-                SettingItem("File Format") { /* TODO */ }
-            )
-        ),
-        SettingsCategory(
-            title = "System Settings",
-            icon = Icons.Filled.Tune,
-            items = listOf(
-                SettingItem("GPS") { /* TODO */ },
-                SettingItem("Speed Unit") { /* TODO */ },
-                SettingItem("Date Time") { /* TODO */ },
-                SettingItem("Language") { /* TODO */ }
-            )
-        )
-    )
-
     Scaffold(
-        containerColor = LightGrayBackground,
+        containerColor = Color(0xFF0D0D0D),
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("Settings", color = Color.White, fontWeight = FontWeight.Bold) },
+                title = {
+                    Text("Settings", color = Color.White, fontWeight = FontWeight.Bold)
+                },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Navigate back",
+                            contentDescription = "Back",
                             tint = Color.White
                         )
                     }
                 },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = PrimaryBlue
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color(0xFF1A1A1A).copy(alpha = 0.9f)
                 )
             )
         }
@@ -127,94 +52,208 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(vertical = 16.dp) // Add padding for top/bottom of the scrollable list
-                .verticalScroll(rememberScrollState()) // Make the column scrollable
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            settingsCategories.forEach { category ->
-                SettingsCategoryCard(category = category)
-                Spacer(modifier = Modifier.height(16.dp))
+            // Live Interval
+            GlassCard {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Live Interval", color = Color.White, fontSize = 16.sp)
+                    Spacer(Modifier.width(12.dp))
+                    TextField(
+                        value = "2",
+                        onValueChange = { },
+                        textStyle = LocalTextStyle.current.copy(color = Color.White),
+                        colors = TextFieldDefaults.textFieldColors(
+                            containerColor = Color.Transparent,
+                            focusedIndicatorColor = Color.White,
+                            unfocusedIndicatorColor = Color.Gray
+                        ),
+                        modifier = Modifier.width(80.dp)
+                    )
+                    Text("(Sec)", color = Color.Gray, fontSize = 14.sp)
+                    Spacer(Modifier.weight(1f))
+                    GlassButton(text = "UPDATE")
+                }
             }
+
+            // Load Data (Date Wise)
+            GlassCard {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("06-10-2025", color = Color.White, fontSize = 16.sp)
+                    Spacer(Modifier.weight(1f))
+                    GlassButton(text = "LOAD DATA DATE WISE")
+                }
+            }
+
+            // Load Data (Month Wise)
+            GlassCard {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Oct 2025", color = Color.White, fontSize = 16.sp)
+                    Spacer(Modifier.weight(1f))
+                    GlassButton(text = "LOAD DATA MONTH WISE")
+                }
+            }
+
+            // Delete Old Data (with dropdown)
+            DeleteOldDataCard()
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class) // Ensures Experimental API for Card is handled
 @Composable
-fun SettingsCategoryCard(category: SettingsCategory) {
-    Card(
+fun GlassCard(content: @Composable ColumnScope.() -> Unit) {
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp), // Add horizontal padding for cards
-        colors = CardDefaults.cardColors(containerColor = CardBackground), // Changed to cardColors
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = category.icon,
-                    contentDescription = category.title,
-                    tint = PrimaryBlue,
-                    modifier = Modifier.size(28.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color.White.copy(alpha = 0.12f), Color.White.copy(alpha = 0.06f))
                 )
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = category.title,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = DarkGrayText
-                )
-            }
-            HorizontalDivider(color = LightGrayBackground, thickness = 1.dp)
-
-            category.items.forEachIndexed { index, settingItem ->
-                SettingRowItem(settingItem = settingItem)
-                if (index < category.items.lastIndex) {
-                    HorizontalDivider(
-                        modifier = Modifier.padding(start = 16.dp), // Indent divider
-                        color = LightGrayBackground.copy(alpha = 0.5f)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class) // Ensures Experimental API for ListItem is handled
-@Composable
-fun SettingRowItem(settingItem: SettingItem) {
-    ListItem(
-        headlineContent = {
-            Text(
-                text = settingItem.title,
-                fontSize = 16.sp,
-                color = DarkGrayText
             )
-        },
-        trailingContent = {
-             Row(verticalAlignment = Alignment.CenterVertically) {
-                settingItem.currentValue?.let {
-                    Text(it, fontSize = 14.sp, color = DarkGrayText.copy(alpha = 0.7f))
-                    Spacer(Modifier.width(8.dp))
-                }
-                Icon(
-                    Icons.Filled.ChevronRight,
-                    contentDescription = "Select ${settingItem.title}",
-                    tint = DarkGrayText.copy(alpha = 0.5f)
-                )
-            }
-        },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-        modifier = Modifier.fillMaxWidth()
-        // onClick = settingItem.onClick // ListItem itself can be clickable
+            .padding(16.dp),
+        content = content
     )
 }
 
-@Preview(showBackground = true, widthDp = 360, heightDp = 740) // Corrected Preview annotation
+@Composable
+fun GlassButton(text: String) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(
+                Brush.linearGradient(
+                    listOf(Color.White.copy(alpha = 0.25f), Color.White.copy(alpha = 0.08f))
+                )
+            )
+            .border(
+                width = 1.dp,
+                color = Color.White.copy(alpha = 0.2f),
+                shape = RoundedCornerShape(16.dp)
+            )
+            .padding(horizontal = 20.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text,
+            color = Color.White,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 14.sp
+        )
+    }
+}
+
+@Composable
+fun GlassDangerButton(text: String) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(
+                Brush.linearGradient(
+                    listOf(Color.Red.copy(alpha = 0.35f), Color.Red.copy(alpha = 0.15f))
+                )
+            )
+            .border(
+                width = 1.dp,
+                color = Color.Red.copy(alpha = 0.4f),
+                shape = RoundedCornerShape(16.dp)
+            )
+            .padding(horizontal = 20.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text,
+            color = Color.White,
+            fontWeight = FontWeight.Bold,
+            fontSize = 14.sp
+        )
+    }
+}
+
+@Composable
+fun DeleteOldDataCard() {
+    var expanded by remember { mutableStateOf(false) }
+    var selectedOption by remember { mutableStateOf("3 Months") }
+    val options = listOf("3 Months","4 Months", "5 Months", "6 Months","7 Months","8 Months", "9 Months","10 Months","11 Months", "12 Months")
+
+    GlassCard {
+        Column(
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            // Top row with label and dropdown
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    "Delete data older than:",
+                    color = Color.White,
+                    fontSize = 16.sp
+                )
+                Spacer(Modifier.width(8.dp))
+
+                // Dropdown
+                Box {
+                    OutlinedButton(
+                        onClick = { expanded = true },
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = Color.White
+                        ),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Text(
+                            selectedOption,
+                            fontSize = 15.sp
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Default.ArrowDropDown,
+                            contentDescription = "Dropdown",
+                            tint = Color.White
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false }
+                    ) {
+                        options.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(option) },
+                                onClick = {
+                                    selectedOption = option
+                                    expanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            // Bottom row with button aligned to end
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                GlassDangerButton(text = "DELETE OLD DATA")
+            }
+        }
+    }
+}
+
+@Preview(showBackground = true, widthDp = 360, heightDp = 740)
 @Composable
 fun SettingsScreenPreview() {
     Lasertac2Theme {
