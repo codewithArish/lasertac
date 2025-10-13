@@ -74,17 +74,22 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
+import androidx.core.net.toUri
 import coil.compose.AsyncImage
 import com.lasertrac.app.db.SavedSnapLocationEntity
 import com.lasertrac.app.db.SnapLocationDao
 import com.lasertrac.app.ui.theme.Lasertac2Theme
 import com.lasertrac.app.ui.theme.TextColorLight
 import com.lasertrac.app.ui.theme.TopBarColor
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -115,8 +120,8 @@ fun SavedSnapLocationEntity.toSnapDetail(): SnapDetail {
         policeStation = this.selectedPoliceArea,
         address = this.fullAddress,
         uploadStatus = "Pending",
-        mainImage = R.drawable.ic_snaps_custom, // Using default placeholder
-        licensePlateImage = R.drawable.ic_snaps_custom,
+        mainImage = this.imageUri?.toUri() ?: R.drawable.ic_snaps_custom, // Use the URI
+        licensePlateImage = this.imageUri?.toUri() ?: R.drawable.ic_snaps_custom,
         mapImage = R.drawable.ic_snaps_custom,
         violationSummary = "",
         violationManagementLink = "",
@@ -126,6 +131,9 @@ fun SavedSnapLocationEntity.toSnapDetail(): SnapDetail {
 }
 
 fun SnapDetail.toDbSnapLocationEntity(): SavedSnapLocationEntity {
+    // Ensure the image is a Uri and convert to a string for DB storage
+    val imageUriString = if (mainImage is Uri) mainImage.toString() else null
+
     return SavedSnapLocationEntity(
         snapId = this.id,
         latitude = this.latitude.toDoubleOrNull() ?: 0.0,
@@ -135,10 +143,10 @@ fun SnapDetail.toDbSnapLocationEntity(): SavedSnapLocationEntity {
         country = "", // Assuming default values for these
         selectedCity = "",
         selectedState = "",
-        selectedPoliceArea = this.policeStation
+        selectedPoliceArea = this.policeStation,
+        imageUri = imageUriString
     )
 }
-
 
 fun Long.toFormattedDateString(pattern: String = "dd-MM-yyyy"): String {
     return SimpleDateFormat(pattern, Locale.getDefault()).format(Date(this))
@@ -158,13 +166,38 @@ fun getTemporaryDevelopmentSnaps(): List<SnapDetail> {
     )
 }
 
-fun createImageFile(context: Context): File {
+/**
+ * Copies an image from a given URI to the app's internal storage.
+ * This creates a permanent, reliable copy that the app can always access.
+ * @return The URI of the new, permanently stored image, or null on failure.
+ */
+suspend fun saveImageToInternalStorage(context: Context, uri: Uri): Uri? {
+    return withContext(Dispatchers.IO) {
+        try {
+            val inputStream = context.contentResolver.openInputStream(uri)
+            val file = createImageFile(context, "_persistent") // Create a unique file
+            val outputStream = FileOutputStream(file)
+            inputStream?.use { input ->
+                outputStream.use { output ->
+                    input.copyTo(output)
+                }
+            }
+            FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+        } catch (e: IOException) {
+            e.printStackTrace()
+            null
+        }
+    }
+}
+
+fun createImageFile(context: Context, suffix: String = ""): File {
     val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-    val imageFileName = "JPEG_${timeStamp}_"
-    val storageDir = File(context.cacheDir, "images")
-    if (!storageDir.exists()) storageDir.mkdirs()
+    val imageFileName = "JPEG_${timeStamp}${suffix}"
+    // Use app's internal cache directory for captured images
+    val storageDir = File(context.cacheDir, "images").apply { mkdirs() }
     return File.createTempFile(imageFileName, ".jpg", storageDir)
 }
+
 
 fun createNewSnap(imageUri: Uri, deviceId: String): SnapDetail {
     val todayDateStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
@@ -211,13 +244,17 @@ fun SnapsScreen(onNavigateBack: () -> Unit, snapLocationDao: SnapLocationDao) {
     val coroutineScope = rememberCoroutineScope()
     val allSnapDetails = remember { mutableStateListOf<SnapDetail>() }
 
-    // Load snaps from the database
+    // Load snaps from the database and keep the UI in sync
     LaunchedEffect(key1 = snapLocationDao) {
         snapLocationDao.getAllSnapLocations().map { dbList ->
-            dbList.map { it.toSnapDetail() }
-        }.collect { mappedList ->
-            if (allSnapDetails.isEmpty()) { // Initial load
-                allSnapDetails.addAll(mappedList.ifEmpty { getTemporaryDevelopmentSnaps() })
+            dbList.map { it.toSnapDetail() }.sortedByDescending { it.dateTime } // Sort by date
+        }.collect { snapsFromDb ->
+            allSnapDetails.clear()
+            if (snapsFromDb.isNotEmpty()) {
+                allSnapDetails.addAll(snapsFromDb)
+            } else {
+                // If DB is empty, show mock data. Remove this else block in production.
+                allSnapDetails.addAll(getTemporaryDevelopmentSnaps())
             }
         }
     }
@@ -225,12 +262,29 @@ fun SnapsScreen(onNavigateBack: () -> Unit, snapLocationDao: SnapLocationDao) {
     var tempImageUri by remember { mutableStateOf<Uri?>(null) }
 
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        uri?.let { allSnapDetails.add(0, createNewSnap(it, "Gallery")) }
+        uri?.let {
+            coroutineScope.launch {
+                val permanentUri = saveImageToInternalStorage(context, it)
+                if (permanentUri != null) {
+                    val newSnap = createNewSnap(permanentUri, "Gallery")
+                    snapLocationDao.insertOrUpdateSnapLocation(newSnap.toDbSnapLocationEntity())
+                    Toast.makeText(context, "Snap saved!", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "Failed to save image.", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
     }
 
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         if (success) {
-            tempImageUri?.let { allSnapDetails.add(0, createNewSnap(it, "Camera")) }
+            tempImageUri?.let {
+                coroutineScope.launch {
+                    val newSnap = createNewSnap(it, "Camera")
+                    snapLocationDao.insertOrUpdateSnapLocation(newSnap.toDbSnapLocationEntity())
+                    Toast.makeText(context, "Snap saved!", Toast.LENGTH_SHORT).show()
+                }
+            }
         } else {
             Toast.makeText(context, "Camera capture failed", Toast.LENGTH_SHORT).show()
         }
@@ -288,9 +342,11 @@ fun SnapsScreen(onNavigateBack: () -> Unit, snapLocationDao: SnapLocationDao) {
                         if (selectedSnapIds.size == filteredSnapDetails.size) selectedSnapIds.clear() else selectedSnapIds.addAll(filteredSnapDetails.map { it.id })
                     },
                     onDelete = {
-                        // TODO: Also delete from DAO
-                        allSnapDetails.removeAll { selectedSnapIds.contains(it.id) }
-                        exitSelectionMode()
+                        coroutineScope.launch {
+                            snapLocationDao.deleteSnapsByIds(selectedSnapIds.toList())
+                            Toast.makeText(context, "${selectedSnapIds.size} snaps deleted.", Toast.LENGTH_SHORT).show()
+                            exitSelectionMode()
+                        }
                     }
                 )
             } else {
@@ -509,6 +565,7 @@ class MockSnapLocationDao : SnapLocationDao {
     override suspend fun insertOrUpdateSnapLocation(snapLocation: SavedSnapLocationEntity) {}
     override fun getSnapLocationById(snapId: String): Flow<SavedSnapLocationEntity?> = flowOf(null)
     override fun getAllSnapLocations(): Flow<List<SavedSnapLocationEntity>> = flowOf(getTemporaryDevelopmentSnaps().map { it.toDbSnapLocationEntity() })
+    override suspend fun deleteSnapsByIds(snapIds: List<String>) {}
 }
 
 @Preview(showBackground = true, device = "id:pixel_6")
