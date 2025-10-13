@@ -538,7 +538,8 @@ private fun LocationDetailRow(label: String, value: String) {
     }
 }
 
-class MockSnapLocationDao : SnapLocationDao {
+// Renamed to avoid conflict and corrected implementation
+class LocationScreenMockDao : SnapLocationDao {
     private val mockStorage = mutableMapOf<String, SavedSnapLocationEntity>()
     override suspend fun insertOrUpdateSnapLocation(snapLocation: SavedSnapLocationEntity) { mockStorage[snapLocation.snapId] = snapLocation }
     override fun getSnapLocationById(snapId: String): Flow<SavedSnapLocationEntity?> = flowOf(mockStorage[snapId])
@@ -548,5 +549,5 @@ class MockSnapLocationDao : SnapLocationDao {
 @Preview(showBackground = true, device = "id:pixel_6")
 @Composable
 fun LocationScreenPreview() {
-    Lasertac2Theme { LocationScreen(onNavigateBack = {}, snapId = "preview_snap_id", snapLocationDao = MockSnapLocationDao()) }
+    Lasertac2Theme { LocationScreen(onNavigateBack = {}, snapId = "preview_snap_id", snapLocationDao = LocationScreenMockDao()) }
 }

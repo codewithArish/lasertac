@@ -73,7 +73,6 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         val appDb = AppDatabase.getDatabase(applicationContext)
-        // val policeStationDao = appDb.policeStationDao() // Removed unused variable
         val snapLocationDao = appDb.snapLocationDao()
 
         setContent {
@@ -81,7 +80,6 @@ class MainActivity : ComponentActivity() {
                 var currentScreen by remember { mutableStateOf(Screen.Dashboard) }
                 val context = LocalContext.current // For potential finishActivity call
 
-                // Handle system back button press
                 BackHandler(enabled = true) {
                     if (currentScreen != Screen.Dashboard) {
                         currentScreen = Screen.Dashboard
@@ -105,8 +103,8 @@ class MainActivity : ComponentActivity() {
                         onNavigateBack = { currentScreen = Screen.Dashboard }
                     )
                     Screen.Snaps -> SnapsScreen(
-                        onNavigateBack = { currentScreen = Screen.Dashboard }
-                        // snapLocationDao = snapLocationDao // Removed as SnapsScreen no longer takes this param
+                        onNavigateBack = { currentScreen = Screen.Dashboard },
+                        snapLocationDao = snapLocationDao // Added snapLocationDao back
                     )
                     Screen.Videos -> VideosScreen(
                         onNavigateBack = { currentScreen = Screen.Dashboard }
@@ -119,7 +117,7 @@ class MainActivity : ComponentActivity() {
                     )
                     Screen.Location -> LocationScreen(
                         onNavigateBack = { currentScreen = Screen.Dashboard },
-                        snapId = "current_device_location", // This might need to be dynamic
+                        snapId = "current_device_location",
                         snapLocationDao = snapLocationDao
                     )
                     Screen.Violations -> ViolationsScreen(
