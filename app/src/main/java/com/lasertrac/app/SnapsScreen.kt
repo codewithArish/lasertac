@@ -2,115 +2,253 @@ package com.lasertrac.app
 
 import android.Manifest
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-// import android.graphics.Rect // Removed unused import
 import android.net.Uri
-import android.os.Environment
-import android.util.Log
-import androidx.activity.compose.BackHandler
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CalendarToday
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-// import androidx.compose.ui.unit.sp // Removed unused import
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.FileProvider
-// import com.lasertrac.app.db.SnapLocationDao // Keep if MockSnapLocationDao is in another file and uses it
+import coil.compose.AsyncImage
+import com.lasertrac.app.db.SavedSnapLocationEntity
+import com.lasertrac.app.db.SnapLocationDao
 import com.lasertrac.app.ui.theme.Lasertac2Theme
 import com.lasertrac.app.ui.theme.TextColorLight
 import com.lasertrac.app.ui.theme.TopBarColor
-import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.io.File
-// import java.io.FileOutputStream // Removed unused import, will be used in actual saveBitmapToFile
-// import java.io.IOException // Removed unused import, will be used in actual saveBitmapToFile
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
 
-// Helper function to format millis to date string (from previous version)
-fun Long.toFormattedDateString(pattern: String = "dd-MM-yyyy"): String {
-    val sdf = SimpleDateFormat(pattern, Locale.getDefault())
-    return sdf.format(Date(this))
+// Mapper from DB Entity to UI Model
+fun SavedSnapLocationEntity.toSnapDetail(): SnapDetail {
+    val currentDateTimeStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+    val currentDateStr = currentDateTimeStr.substringBefore(" ")
+
+    return SnapDetail(
+        id = this.snapId,
+        regNr = "", // Default empty, can be edited
+        evidenceDate = currentDateStr,
+        dateTime = currentDateTimeStr,
+        status = SnapStatus.PENDING,
+        speed = 0,
+        deviceId = "",
+        operatorId = "",
+        speedLimit = 0,
+        location = this.fullAddress,
+        violationDistance = "",
+        recordNr = "REC-${this.snapId.take(4)}",
+        latitude = this.latitude.toString(),
+        longitude = this.longitude.toString(),
+        district = this.district,
+        policeStation = this.selectedPoliceArea,
+        address = this.fullAddress,
+        uploadStatus = "Pending",
+        mainImage = R.drawable.ic_snaps_custom, // Using default placeholder
+        licensePlateImage = R.drawable.ic_snaps_custom,
+        mapImage = R.drawable.ic_snaps_custom,
+        violationSummary = "",
+        violationManagementLink = "",
+        accessLink = "",
+        regNrStatus = ""
+    )
 }
 
-// UI state for the new snap processing flow
-data class SnapProcessingState(
-    val isLoading: Boolean = false,
-    val originalImageUri: Uri? = null,
-    val croppedPlateBitmap: Bitmap? = null,
-    val extractedNumber: String? = null,
-    val processingError: String? = null,
-    val showProcessingDialog: Boolean = false
-)
+fun SnapDetail.toDbSnapLocationEntity(): SavedSnapLocationEntity {
+    return SavedSnapLocationEntity(
+        snapId = this.id,
+        latitude = this.latitude.toDoubleOrNull() ?: 0.0,
+        longitude = this.longitude.toDoubleOrNull() ?: 0.0,
+        fullAddress = this.address,
+        district = this.district,
+        country = "", // Assuming default values for these
+        selectedCity = "",
+        selectedState = "",
+        selectedPoliceArea = this.policeStation
+    )
+}
+
+
+fun Long.toFormattedDateString(pattern: String = "dd-MM-yyyy"): String {
+    return SimpleDateFormat(pattern, Locale.getDefault()).format(Date(this))
+}
+
+// Returns a list of mock snaps for development and preview purposes
+fun getTemporaryDevelopmentSnaps(): List<SnapDetail> {
+    val todayDateStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+    val yesterdayDateTime = Calendar.getInstance().apply { add(Calendar.DATE, -1) }.time
+    val yesterdayDateStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(yesterdayDateTime)
+    val todayDateTimeStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+
+    return listOf(
+        SnapDetail("dev_mock1", "DL5CQ1234", todayDateTimeStr, 95, 80, "City Highway", todayDateStr, "Metro District", "Metro PS", "Address for Today 1", "10.1", "11.1", "MREC-TODAY-1", "MOCK-DEV-TODAY-1", "MOCK-OP", "110 m", "Pending", SnapStatus.PENDING, R.drawable.ic_snaps_custom, R.drawable.ic_snaps_custom, R.drawable.ic_snaps_custom, "Overspeeding by 15 km/h", "", "", "Valid"),
+        SnapDetail("dev_mock2", "MH14AB5678", todayDateTimeStr, 65, 50, "Suburban Road", todayDateStr, "Suburban District", "Suburban PS", "Address for Today 2", "10.2", "11.2", "MREC-TODAY-2", "MOCK-DEV-TODAY-2", "MOCK-OP", "90 m", "Uploaded", SnapStatus.UPLOADED, R.drawable.ic_snaps_custom, R.drawable.ic_snaps_custom, R.drawable.ic_snaps_custom, "Overspeeding by 15 km/h", "", "", "Valid"),
+        SnapDetail("dev_mock3", "KA01XY9999", SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(yesterdayDateTime), 80, 80, "State Highway 5", yesterdayDateStr, "Rural District", "Rural PS", "Address for Yesterday 1", "10.3", "11.3", "MREC-YDAY-1", "MOCK-DEV-YDAY-1", "MOCK-OP-2", "0 m", "Rejected", SnapStatus.REJECTED, R.drawable.ic_snaps_custom, R.drawable.ic_snaps_custom, R.drawable.ic_snaps_custom, "No violation.", "", "", "Invalid")
+    )
+}
+
+fun createImageFile(context: Context): File {
+    val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+    val imageFileName = "JPEG_${timeStamp}_"
+    val storageDir = File(context.cacheDir, "images")
+    if (!storageDir.exists()) storageDir.mkdirs()
+    return File.createTempFile(imageFileName, ".jpg", storageDir)
+}
+
+fun createNewSnap(imageUri: Uri, deviceId: String): SnapDetail {
+    val todayDateStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+    val todayDateTimeStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+    return SnapDetail(
+        id = UUID.randomUUID().toString(),
+        regNr = "",
+        dateTime = todayDateTimeStr,
+        speed = 0,
+        speedLimit = 0,
+        location = "From $deviceId",
+        evidenceDate = todayDateStr,
+        district = "",
+        policeStation = "",
+        address = "",
+        latitude = "0.0",
+        longitude = "0.0",
+        recordNr = "",
+        deviceId = deviceId,
+        operatorId = "USER",
+        violationDistance = "",
+        uploadStatus = "Pending",
+        status = SnapStatus.PENDING,
+        mainImage = imageUri,
+        licensePlateImage = imageUri, // Placeholder, can be updated after processing
+        mapImage = imageUri, // Placeholder
+        violationSummary = "",
+        violationManagementLink = "",
+        accessLink = "",
+        regNrStatus = ""
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun SnapsScreen(onNavigateBack: () -> Unit /* snapLocationDao: SnapLocationDao // Removed unused parameter */) {
+fun SnapsScreen(onNavigateBack: () -> Unit, snapLocationDao: SnapLocationDao) {
     var showDatePicker by remember { mutableStateOf(false) }
-    val datePickerState = rememberDatePickerState(initialSelectedDateMillis = null)
-    val selectedDateFormatted by remember { derivedStateOf { datePickerState.selectedDateMillis?.toFormattedDateString() ?: "All Snaps" } }
-
+    val datePickerState = rememberDatePickerState(initialSelectedDateMillis = System.currentTimeMillis())
     var isSearchActive by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var showInfoDialog by remember { mutableStateOf(false) }
+    var showAddSnapDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val allSnapDetails = remember { mutableStateListOf<SnapDetail>() }
+
+    // Load snaps from the database
+    LaunchedEffect(key1 = snapLocationDao) {
+        snapLocationDao.getAllSnapLocations().map { dbList ->
+            dbList.map { it.toSnapDetail() }
+        }.collect { mappedList ->
+            if (allSnapDetails.isEmpty()) { // Initial load
+                allSnapDetails.addAll(mappedList.ifEmpty { getTemporaryDevelopmentSnaps() })
+            }
+        }
+    }
+
+    var tempImageUri by remember { mutableStateOf<Uri?>(null) }
+
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+        uri?.let { allSnapDetails.add(0, createNewSnap(it, "Gallery")) }
+    }
+
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success) {
+            tempImageUri?.let { allSnapDetails.add(0, createNewSnap(it, "Camera")) }
+        } else {
+            Toast.makeText(context, "Camera capture failed", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
+        if (isGranted) {
+            val newImageFile = createImageFile(context)
+            val newImageUri = FileProvider.getUriForFile(context, "${context.packageName}.provider", newImageFile)
+            tempImageUri = newImageUri
+            cameraLauncher.launch(newImageUri)
+        } else {
+            Toast.makeText(context, "Camera permission is required", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     var selectionMode by remember { mutableStateOf(false) }
     val selectedSnapIds = remember { mutableStateListOf<String>() }
-
-    var snapProcessingState by remember { mutableStateOf(SnapProcessingState()) }
-    var tempImageUri by remember { mutableStateOf<Uri?>(null) }
-    val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope() // Used for launching image processing
-
-    val allSnapDetails = remember {
-        mutableStateListOf(
-            SnapDetail("1", R.drawable.ic_snaps_custom, R.drawable.ic_snaps_custom, R.drawable.ic_snaps_custom, "2024-05-21 10:30 AM", "LT-12345", "OP-6789", 85, 70, "Highway A1", "150 m", "REC-1", "HR26AS0001", "Valid", "28.6139", "77.2090", "2024-05-21", "New Delhi", "Central Delhi PS", "Near India Gate, New Delhi", "Overspeeding", "http://example.com/1", "http://example.com/1", "Uploaded", SnapStatus.PENDING),
-            SnapDetail("2", R.drawable.ic_videos_custom, R.drawable.ic_snaps_custom, R.drawable.ic_snaps_custom, "2024-05-22 11:00 AM", "LT-12345", "OP-6789", 72, 60, "Highway A1", "150 m", "REC-2", "DL7CS2107", "Valid", "28.6139", "77.2090", "2024-05-22", "New Delhi", "Central Delhi PS", "Near India Gate, New Delhi", "Overspeeding", "http://example.com/2", "http://example.com/2", "Uploaded", SnapStatus.UPDATED)
-        )
-    }
-
-    val filteredSnapDetails = remember(searchQuery, allSnapDetails.toList(), datePickerState.selectedDateMillis) {
-        val selectedFilterDate = datePickerState.selectedDateMillis?.toFormattedDateString("yyyy-MM-dd")
-        val dateFiltered = if (selectedFilterDate != null) {
-            allSnapDetails.filter { it.evidenceDate == selectedFilterDate }
-        } else {
-            allSnapDetails
-        }
-        if (searchQuery.isBlank()) dateFiltered else dateFiltered.filter { it.regNr.contains(searchQuery, ignoreCase = true) }
-    }
-
     var selectedSnapForPreview by remember { mutableStateOf<SnapDetail?>(null) }
 
     fun exitSelectionMode() {
@@ -118,112 +256,94 @@ fun SnapsScreen(onNavigateBack: () -> Unit /* snapLocationDao: SnapLocationDao /
         selectedSnapIds.clear()
     }
 
-    BackHandler(enabled = selectedSnapForPreview != null || selectionMode || snapProcessingState.showProcessingDialog) {
-        when {
-            snapProcessingState.showProcessingDialog -> snapProcessingState = SnapProcessingState() // Close dialog
-            selectedSnapForPreview != null -> selectedSnapForPreview = null
-            selectionMode -> exitSelectionMode()
-        }
-    }
-
-    val imagePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        uri?.let {
-            snapProcessingState = snapProcessingState.copy(originalImageUri = it, isLoading = true, croppedPlateBitmap = null, extractedNumber = null, processingError = null)
-            // Launch in the composable's scope
-            coroutineScope.launch {
-                processImageAndCreateSnapDetail(context, it, snapProcessingState, this) { updatedState -> snapProcessingState = updatedState }
+    val filteredSnapDetails by remember(searchQuery, allSnapDetails.toList(), datePickerState.selectedDateMillis) {
+        derivedStateOf {
+            val selectedFilterDate = datePickerState.selectedDateMillis?.toFormattedDateString("yyyy-MM-dd")
+            val dateFiltered = if (selectedFilterDate != null) {
+                allSnapDetails.filter { it.evidenceDate == selectedFilterDate }
+            } else {
+                allSnapDetails
             }
+            if (searchQuery.isBlank()) dateFiltered else dateFiltered.filter { it.regNr.contains(searchQuery, true) || it.location.contains(searchQuery, true) }
         }
     }
 
-    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success: Boolean ->
-        if (success) {
-            tempImageUri?.let {
-                snapProcessingState = snapProcessingState.copy(originalImageUri = it, isLoading = true, croppedPlateBitmap = null, extractedNumber = null, processingError = null)
-                coroutineScope.launch {
-                    processImageAndCreateSnapDetail(context, it, snapProcessingState, this) { updatedState -> snapProcessingState = updatedState }
-                }
-            }
-        } else {
-            snapProcessingState = snapProcessingState.copy(isLoading = false, processingError = "Image capture failed.")
-        }
-    }
-
-    val requestCameraPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted: Boolean ->
-        if (isGranted) {
-            val newTempImageUri = createImageUriForCapture(context)
-            tempImageUri = newTempImageUri
-            cameraLauncher.launch(newTempImageUri)
-        } else {
-            snapProcessingState = snapProcessingState.copy(isLoading = false, processingError = "Camera permission denied.")
-        }
+    if (showAddSnapDialog) {
+        AddSnapDialog(
+            onDismiss = { showAddSnapDialog = false },
+            onFromGallery = { showAddSnapDialog = false; galleryLauncher.launch("image/*") },
+            onFromCamera = { showAddSnapDialog = false; cameraPermissionLauncher.launch(Manifest.permission.CAMERA) }
+        )
     }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            Crossfade(targetState = selectionMode, label = "TopBarCrossfade") { isSelectionMode ->
-                if (isSelectionMode) {
-                    val allVisibleSelected = selectedSnapIds.size == filteredSnapDetails.size && filteredSnapDetails.isNotEmpty()
-                    SelectionTopAppBar(
-                        selectedCount = selectedSnapIds.size,
-                        allSelected = allVisibleSelected,
-                        onClose = { exitSelectionMode() },
-                        onSelectAll = {
-                            if (allVisibleSelected) selectedSnapIds.clear()
-                            else { selectedSnapIds.clear(); selectedSnapIds.addAll(filteredSnapDetails.map { it.id }) }
-                        },
-                        onDelete = {
-                            allSnapDetails.removeAll { selectedSnapIds.contains(it.id) }
-                            // TODO: Also delete from DAO
-                            exitSelectionMode()
-                        }
-                    )
-                } else {
-                    NormalTopAppBar(
-                        isSearchActive = isSearchActive,
-                        searchQuery = searchQuery,
-                        onSearchQueryChange = { searchQuery = it },
-                        onSearchToggled = { isSearchActive = !isSearchActive },
-                        onNavigateBack = onNavigateBack,
-                        onShowDatePicker = { showDatePicker = true },
-                        onShowInfoDialog = { showInfoDialog = true },
-                        onAddSnap = { snapProcessingState = snapProcessingState.copy(showProcessingDialog = true, isLoading = false, processingError = null, croppedPlateBitmap = null, extractedNumber = null, originalImageUri = null) }
-                    )
+            if (selectionMode) {
+                SelectionTopAppBar(
+                    selectedCount = selectedSnapIds.size,
+                    allSelected = selectedSnapIds.size == filteredSnapDetails.size && filteredSnapDetails.isNotEmpty(),
+                    onClose = { exitSelectionMode() },
+                    onSelectAll = {
+                        if (selectedSnapIds.size == filteredSnapDetails.size) selectedSnapIds.clear() else selectedSnapIds.addAll(filteredSnapDetails.map { it.id })
+                    },
+                    onDelete = {
+                        // TODO: Also delete from DAO
+                        allSnapDetails.removeAll { selectedSnapIds.contains(it.id) }
+                        exitSelectionMode()
+                    }
+                )
+            } else {
+                NormalTopAppBar(
+                    isSearchActive, searchQuery, { searchQuery = it }, { isSearchActive = !isSearchActive }, onNavigateBack, { showDatePicker = true }, { showInfoDialog = true }, { showAddSnapDialog = true }
+                )
+            }
+        },
+        floatingActionButton = {
+            if (!selectionMode) {
+                FloatingActionButton({ showAddSnapDialog = true }, containerColor = MaterialTheme.colorScheme.primary) {
+                    Icon(Icons.Default.Add, "Add Snap", tint = MaterialTheme.colorScheme.onPrimary)
                 }
             }
         }
     ) { innerPadding ->
-        Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
+        Column(Modifier.fillMaxSize().padding(innerPadding)) {
+            val selectedDateFormatted by remember { derivedStateOf { datePickerState.selectedDateMillis?.toFormattedDateString() ?: "All Snaps" } }
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).clickable { showDatePicker = true },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .clickable { showDatePicker = true },
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("Displaying snaps for: $selectedDateFormatted", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f))
+                Text(text = "Displaying snaps for: $selectedDateFormatted", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
                 if (datePickerState.selectedDateMillis != null) {
-                    IconButton(onClick = { datePickerState.selectedDateMillis = null }, modifier = Modifier.size(24.dp)) {
-                        Icon(Icons.Default.Close, contentDescription = "Clear Date Filter", modifier = Modifier.size(16.dp))
+                    IconButton({ datePickerState.selectedDateMillis = null }, Modifier.size(24.dp)) {
+                        Icon(Icons.Default.Close, "Clear Date Filter", modifier = Modifier.size(16.dp))
                     }
                 }
             }
 
-            LazyColumn(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxSize()) {
-                items(filteredSnapDetails, key = { it.id }) { snapDetail ->
-                    SnapCard(
-                        snapDetail = snapDetail,
-                        isSelected = selectedSnapIds.contains(snapDetail.id),
-                        selectionMode = selectionMode,
-                        onClick = {
-                            if (selectionMode) {
-                                if (selectedSnapIds.contains(snapDetail.id)) selectedSnapIds.remove(snapDetail.id) else selectedSnapIds.add(snapDetail.id)
-                            } else {
-                                selectedSnapForPreview = snapDetail
+            if (filteredSnapDetails.isEmpty()) {
+                Box(Modifier.fillMaxSize().padding(16.dp), Alignment.Center) {
+                    Text(if (allSnapDetails.isEmpty()) "No snaps available." else "No snaps match filter.")
+                }
+            } else {
+                LazyColumn(contentPadding = PaddingValues(12.dp, 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(filteredSnapDetails, key = { it.id }) { snapDetail ->
+                        SnapCard(snapDetail, selectedSnapIds.contains(snapDetail.id), selectionMode,
+                            onClick = {
+                                if (selectionMode) {
+                                    if (selectedSnapIds.contains(snapDetail.id)) selectedSnapIds.remove(snapDetail.id) else selectedSnapIds.add(snapDetail.id)
+                                } else {
+                                    selectedSnapForPreview = snapDetail
+                                }
+                            },
+                            onLongClick = {
+                                if (!selectionMode) { selectionMode = true; selectedSnapIds.add(snapDetail.id) }
                             }
-                        },
-                        onLongClick = {
-                            if (!selectionMode) { selectionMode = true; selectedSnapIds.add(snapDetail.id) }
-                        }
-                    )
+                        )
+                    }
                 }
             }
         }
@@ -231,17 +351,19 @@ fun SnapsScreen(onNavigateBack: () -> Unit /* snapLocationDao: SnapLocationDao /
         if (showDatePicker) {
             DatePickerDialog(
                 onDismissRequest = { showDatePicker = false },
-                confirmButton = { TextButton(onClick = { showDatePicker = false }) { Text("OK") } },
-                dismissButton = { TextButton(onClick = { showDatePicker = false }) { Text("Cancel") } }
-            ) { DatePicker(state = datePickerState) }
+                confirmButton = { TextButton({ showDatePicker = false }) { Text("OK") } },
+                dismissButton = { TextButton({ showDatePicker = false }) { Text("Cancel") } })
+            {
+                DatePicker(state = datePickerState)
+            }
         }
 
         if (showInfoDialog) {
-            StatusInfoDialog(onDismiss = { showInfoDialog = false })
+            StatusInfoDialog { showInfoDialog = false }
         }
 
         if (selectedSnapForPreview != null) {
-            Dialog(onDismissRequest = { selectedSnapForPreview = null }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            Dialog({ selectedSnapForPreview = null }, DialogProperties(usePlatformDefaultWidth = false)) {
                 val currentIndex = filteredSnapDetails.indexOf(selectedSnapForPreview)
                 ImagePreviewScreen(
                     snapDetail = selectedSnapForPreview!!,
@@ -251,62 +373,17 @@ fun SnapsScreen(onNavigateBack: () -> Unit /* snapLocationDao: SnapLocationDao /
                     isPrevEnabled = currentIndex > 0,
                     isNextEnabled = currentIndex < filteredSnapDetails.size - 1,
                     onStatusChange = { updatedSnap ->
-                        val indexInOriginalList = allSnapDetails.indexOfFirst { it.id == updatedSnap.id }
-                        if (indexInOriginalList != -1) {
-                            allSnapDetails[indexInOriginalList] = updatedSnap
-                            selectedSnapForPreview = updatedSnap
-                            // TODO: Update in DAO
+                        coroutineScope.launch {
+                            val indexInAll = allSnapDetails.indexOfFirst { it.id == updatedSnap.id }
+                            if (indexInAll != -1) {
+                                // TODO: Also update in DAO
+                                allSnapDetails[indexInAll] = updatedSnap
+                                selectedSnapForPreview = updatedSnap
+                            }
                         }
                     }
                 )
             }
-        }
-
-        if (snapProcessingState.showProcessingDialog) {
-            ProcessSnapDialog(
-                uiState = snapProcessingState,
-                onDismiss = { snapProcessingState = snapProcessingState.copy(showProcessingDialog = false) },
-                onPickFromGallery = { imagePickerLauncher.launch("image/*") },
-                onTakePhoto = { requestCameraPermissionLauncher.launch(Manifest.permission.CAMERA) },
-                onSaveSnap = {
-                    if (snapProcessingState.extractedNumber != null && snapProcessingState.originalImageUri != null) {
-                        val newId = UUID.randomUUID().toString()
-                        val currentTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
-                        val newSnap = SnapDetail(
-                            id = newId,
-                            mainImageResId = R.drawable.ic_snaps_custom, // Placeholder
-                            licensePlateImageResId = R.drawable.ic_snaps_custom, // Placeholder for cropped plate
-                            mapImageResId = R.drawable.ic_snaps_custom, // Placeholder, (was ic_map_placeholder)
-                            dateTime = currentTime,
-                            deviceId = "DeviceX",
-                            operatorId = "OperatorY",
-                            speed = 0,
-                            speedLimit = 0,
-                            location = "N/A",
-                            violationDistance = "N/A",
-                            recordNr = "REC-${newId.substring(0,4)}",
-                            regNr = snapProcessingState.extractedNumber!!,
-                            regNrStatus = "Pending Validation",
-                            latitude = "0.0",
-                            longitude = "0.0",
-                            evidenceDate = currentTime.substringBefore(" "),
-                            district = "N/A",
-                            policeStation = "N/A",
-                            address = "N/A",
-                            violationSummary = "Processed via app upload",
-                            violationManagementLink = "",
-                            accessLink = "",
-                            uploadStatus = "Pending Upload",
-                            status = SnapStatus.PENDING
-                        )
-                        allSnapDetails.add(0, newSnap)
-                        // TODO: Save newSnap to DAO
-                        snapProcessingState = snapProcessingState.copy(showProcessingDialog = false)
-                    } else {
-                        snapProcessingState = snapProcessingState.copy(processingError = "Cannot save, missing number or image.")
-                    }
-                }
-            )
         }
     }
 }
@@ -314,273 +391,130 @@ fun SnapsScreen(onNavigateBack: () -> Unit /* snapLocationDao: SnapLocationDao /
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NormalTopAppBar(
-    isSearchActive: Boolean,
-    searchQuery: String,
-    onSearchQueryChange: (String) -> Unit,
-    onSearchToggled: () -> Unit,
-    onNavigateBack: () -> Unit,
-    onShowDatePicker: () -> Unit,
-    onShowInfoDialog: () -> Unit,
+    isSearchActive: Boolean, 
+    q: String, 
+    onQ: (String) -> Unit, 
+    onTog: () -> Unit, 
+    onBack: () -> Unit, 
+    onDate: () -> Unit, 
+    onInfo: () -> Unit,
     onAddSnap: () -> Unit
 ) {
     TopAppBar(
         title = {
-            Crossfade(targetState = isSearchActive, label = "SearchCrossfade") {
-                if (it) {
-                    BasicTextField(value = searchQuery, onValueChange = onSearchQueryChange, textStyle = TextStyle(color = TextColorLight), cursorBrush = SolidColor(TextColorLight), singleLine = true, modifier = Modifier.fillMaxWidth(),
-                        decorationBox = { innerTextField -> Box(contentAlignment = Alignment.CenterStart) { if (searchQuery.isEmpty()) Text("Search by vehicle number...", color = TextColorLight.copy(alpha = 0.5f)); innerTextField() } }
-                    )
-                } else Text("Snaps", color = TextColorLight, fontWeight = FontWeight.Bold)
-            }
-        },
-        navigationIcon = { if (!isSearchActive) IconButton(onClick = onNavigateBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Navigate back", tint = TextColorLight) } },
-        actions = {
-            Crossfade(targetState = isSearchActive, label = "ActionsCrossfade") {
-                if (it) {
-                    IconButton(onClick = { onSearchToggled(); onSearchQueryChange("") }) { Icon(Icons.Default.Close, "Close Search", tint = TextColorLight) }
-                } else {
-                    Row {
-                        IconButton(onClick = onAddSnap) { Icon(Icons.Filled.AddAPhoto, "Add New Snap", tint = TextColorLight) }
-                        IconButton(onClick = onShowDatePicker) { Icon(Icons.Filled.CalendarToday, "Select Date", tint = TextColorLight) }
-                        IconButton(onClick = onShowInfoDialog) { Icon(Icons.Filled.Info, "Status Info", tint = TextColorLight) }
-                        IconButton(onClick = onSearchToggled) { Icon(Icons.Filled.Search, "Search Snaps", tint = TextColorLight) }
-                    }
+            if (isSearchActive) {
+                BasicTextField(q, onQ, textStyle = TextStyle(color = TextColorLight), cursorBrush = SolidColor(TextColorLight), singleLine = true, modifier = Modifier.fillMaxWidth()) {
+                    if (q.isEmpty()) Text("Search by vehicle number or location...", color = TextColorLight.copy(0.5f))
+                    it()
                 }
+            } else {
+                Text("Snaps", color = TextColorLight, fontWeight = FontWeight.Bold)
             }
         },
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = TopBarColor.copy(alpha = 0.9f))
+        navigationIcon = { if (!isSearchActive) IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = TextColorLight) } },
+        actions = {
+            if (isSearchActive) {
+                IconButton({ onQ(""); onTog() }) { Icon(Icons.Default.Close, "Close Search", tint = TextColorLight) }
+            } else {
+                IconButton(onAddSnap) { Icon(Icons.Default.Add, "Add Snap", tint = TextColorLight) }
+                IconButton(onDate) { Icon(Icons.Default.CalendarToday, "Select Date", tint = TextColorLight) }
+                IconButton(onInfo) { Icon(Icons.Default.Info, "Status Info", tint = TextColorLight) }
+                IconButton(onTog) { Icon(Icons.Default.Search, "Search Snaps", tint = TextColorLight) }
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = TopBarColor.copy(0.9f))
     )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SelectionTopAppBar(
-    selectedCount: Int, allSelected: Boolean, onClose: () -> Unit, onSelectAll: () -> Unit, onDelete: () -> Unit
-) {
+private fun SelectionTopAppBar(selectedCount: Int, allSelected: Boolean, onClose: () -> Unit, onSelectAll: () -> Unit, onDelete: () -> Unit) {
     TopAppBar(
         title = { Text("$selectedCount Selected", color = TextColorLight) },
-        navigationIcon = { IconButton(onClick = onClose) { Icon(Icons.Default.Close, "Close Selection", tint = TextColorLight) } },
-        actions = { Checkbox(checked = allSelected, onCheckedChange = { onSelectAll() }); IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, "Delete Selected", tint = TextColorLight) } },
-        colors = TopAppBarDefaults.topAppBarColors(containerColor = TopBarColor.copy(alpha = 0.9f))
+        navigationIcon = { IconButton(onClose) { Icon(Icons.Default.Close, "Close Selection", tint = TextColorLight) } },
+        actions = {
+            Checkbox(allSelected, { onSelectAll() })
+            IconButton(onDelete) { Icon(Icons.Default.Delete, "Delete Selected", tint = TextColorLight) }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = TopBarColor.copy(0.9f))
     )
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun SnapCard(
-    snapDetail: SnapDetail, isSelected: Boolean, selectionMode: Boolean, onClick: () -> Unit, onLongClick: () -> Unit
-) {
+fun SnapCard(snap: SnapDetail, sel: Boolean, selMode: Boolean, onClick: () -> Unit, onLongClick: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        colors = CardDefaults.cardColors(containerColor = if(isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant),
-        border = BorderStroke(2.dp, if (isSelected) MaterialTheme.colorScheme.primary else snapDetail.status.color)
+        elevation = CardDefaults.cardElevation(2.dp),
+        colors = CardDefaults.cardColors(containerColor = if (sel) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant),
+        border = BorderStroke(2.dp, if (sel) MaterialTheme.colorScheme.primary else snap.status.color)
     ) {
-        Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Image(painter = painterResource(id = snapDetail.mainImageResId), contentDescription = "Thumbnail of ${snapDetail.regNr}", modifier = Modifier.size(56.dp).clip(CircleShape), contentScale = ContentScale.Crop)
-            Spacer(modifier = Modifier.padding(8.dp))
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.Center) {
-                Text(snapDetail.regNr, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text("Speed: ${snapDetail.speed} km/h", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f))
+        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            AsyncImage(model = snap.mainImage, contentDescription = "Thumb", modifier = Modifier.size(56.dp).clip(CircleShape), contentScale = ContentScale.Crop)
+            Spacer(Modifier.padding(8.dp))
+            Column(Modifier.weight(1f)) {
+                Text(snap.regNr.ifEmpty { "N/A" }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(4.dp))
+                Text("Speed: ${snap.speed} km/h", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(0.8f))
             }
-            if (selectionMode) {
-                Checkbox(checked = isSelected, onCheckedChange = { onClick() })
-            } else {
-                 Text(snapDetail.dateTime.substringBefore(" "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
-            }
+            if (selMode) Checkbox(sel, { onClick() }) else Text(snap.dateTime.substringBefore(" "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(0.6f))
         }
     }
 }
 
 @Composable
+fun AddSnapDialog(onDismiss: () -> Unit, onFromGallery: () -> Unit, onFromCamera: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add New Snap") },
+        text = { Text("Choose an option to add a new snap.") },
+        confirmButton = {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.SpaceAround
+            ) {
+                TextButton(onFromGallery) { Text("From Gallery") }
+                TextButton(onFromCamera) { Text("From Camera") }
+            }
+        },
+        dismissButton = { TextButton(onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
 fun StatusInfoDialog(onDismiss: () -> Unit) {
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("Status Indicators") },
-        text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { StatusIndicator(SnapStatus.PENDING.color, "Pending: Not yet updated."); StatusIndicator(SnapStatus.UPDATED.color, "Updated: Saved locally."); StatusIndicator(SnapStatus.UPLOADED.color, "Uploaded: Synced with server."); StatusIndicator(SnapStatus.REJECTED.color, "Rejected: Challan cancelled.") } },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } }
+    AlertDialog(
+        onDismissRequest = onDismiss, 
+        title = { Text("Status Indicators") }, 
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                SnapStatus.entries.forEach { StatusIndicator(it.color, "${it.name}: explanation text here.") }
+            }
+        },
+        confirmButton = { TextButton(onDismiss) { Text("OK") } }
     )
 }
 
 @Composable
 fun StatusIndicator(color: Color, text: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) { Box(modifier = Modifier.size(20.dp).background(color, CircleShape)); Spacer(modifier = Modifier.padding(start = 8.dp)); Text(text, style = MaterialTheme.typography.bodyMedium) }
-}
-
-@Composable
-fun ProcessSnapDialog(
-    uiState: SnapProcessingState,
-    onDismiss: () -> Unit,
-    onPickFromGallery: () -> Unit,
-    onTakePhoto: () -> Unit,
-    onSaveSnap: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Process New Snap") },
-        text = {
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                if (uiState.isLoading) {
-                    CircularProgressIndicator(modifier = Modifier.padding(vertical = 20.dp))
-                    Text("Processing image...")
-                } else if (uiState.croppedPlateBitmap != null && uiState.extractedNumber != null) {
-                    Text("Processed Result:", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 8.dp))
-                    Card(elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)) {
-                        Column(modifier = Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("Cropped Number Plate:")
-                            Image(bitmap = uiState.croppedPlateBitmap.asImageBitmap(), contentDescription = "Cropped Number Plate", modifier = Modifier.height(80.dp).padding(vertical = 8.dp))
-                            Text("Extracted: ${uiState.extractedNumber}", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                    Spacer(Modifier.height(16.dp))
-                } else {
-                    Button(onClick = onPickFromGallery, modifier = Modifier.fillMaxWidth()) { Text("Upload from Gallery") }
-                    Spacer(Modifier.height(8.dp))
-                    Button(onClick = onTakePhoto, modifier = Modifier.fillMaxWidth()) { Text("Take Photo") }
-                }
-                uiState.processingError?.let {
-                    Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 10.dp))
-                }
-            }
-        },
-        confirmButton = {
-            if (uiState.croppedPlateBitmap != null && uiState.extractedNumber != null && !uiState.isLoading) {
-                TextButton(onClick = onSaveSnap) { Text("Save Snap") }
-            }
-            TextButton(onClick = onDismiss) { Text(if (uiState.croppedPlateBitmap != null && !uiState.isLoading) "Discard" else "Cancel") }
-        }
-    )
-}
-
-fun createImageUriForCapture(context: Context): Uri {
-    val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-    val imageFileName = "JPEG_${timeStamp}_"
-    val storageDir: File? = context.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
-    val imageFile = File.createTempFile(imageFileName, ".jpg", storageDir)
-    return FileProvider.getUriForFile(context, "${context.packageName}.provider", imageFile)
-}
-
-fun processImageAndCreateSnapDetail(
-    context: Context,
-    imageUri: Uri,
-    currentState: SnapProcessingState,
-    scope: CoroutineScope, // Added CoroutineScope parameter
-    onResult: (SnapProcessingState) -> Unit
-) {
-    val initialOriginalBitmap = try {
-        context.contentResolver.openInputStream(imageUri)?.use { BitmapFactory.decodeStream(it) }
-    } catch (e: Exception) {
-        Log.e("SnapsScreen", "Error loading original bitmap: ${e.message}")
-        onResult(currentState.copy(isLoading = false, processingError = "Failed to load image."))
-        return
-    }
-
-    if (initialOriginalBitmap == null) {
-        Log.e("SnapsScreen", "Failed to decode bitmap from URI: $imageUri")
-        onResult(currentState.copy(isLoading = false, processingError = "Failed to load image."))
-        return
-    }
-
-    Log.d("SnapsScreen", "Placeholder: Number plate detection would happen here.")
-    val placeholderCroppedBitmap = Bitmap.createBitmap(initialOriginalBitmap, 0, 0, initialOriginalBitmap.width / 2, initialOriginalBitmap.height / 4)
-    Log.d("SnapsScreen", "Placeholder: Cropping would happen here.")
-    val placeholderExtractedText = "AB12CD3456 (Simulated)"
-    Log.d("SnapsScreen", "Placeholder: OCR would happen here.")
-
-    val picturesDirectory = context.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
-    if (picturesDirectory == null) {
-        onResult(currentState.copy(isLoading = false, croppedPlateBitmap = placeholderCroppedBitmap, extractedNumber = placeholderExtractedText, processingError = "Storage directory not found."))
-        return
-    }
-    Log.d("SnapsScreen", "Placeholder: Saving images would happen here.")
-
-    scope.launch { // Use the passed-in scope
-        kotlinx.coroutines.delay(1000) // Simulate processing time
-        onResult(
-            currentState.copy(
-                isLoading = false,
-                croppedPlateBitmap = placeholderCroppedBitmap,
-                extractedNumber = placeholderExtractedText,
-                originalImageUri = imageUri
-            )
-        )
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(Modifier.size(20.dp).background(color, CircleShape))
+        Spacer(Modifier.padding(start = 8.dp))
+        Text(text, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
-/*
-// --- Placeholder function definitions (TO BE IMPLEMENTED BY YOU) ---
-
-private fun detectPlateRegionWithOpenCV(bitmap: Bitmap): android.graphics.Rect? {
-    Log.w("SnapsScreen", "detectPlateRegionWithOpenCV: Needs implementation!")
-    // TODO: Implement OpenCV detection. Return a Rect if plate found, else null.
-    return null
+// A mock DAO for previewing the screen without a real database.
+class MockSnapLocationDao : SnapLocationDao {
+    override suspend fun insertOrUpdateSnapLocation(snapLocation: SavedSnapLocationEntity) {}
+    override fun getSnapLocationById(snapId: String): Flow<SavedSnapLocationEntity?> = flowOf(null)
+    override fun getAllSnapLocations(): Flow<List<SavedSnapLocationEntity>> = flowOf(getTemporaryDevelopmentSnaps().map { it.toDbSnapLocationEntity() })
 }
-
-private fun cropBitmap(source: Bitmap, region: android.graphics.Rect): Bitmap? {
-    Log.w("SnapsScreen", "cropBitmap: Needs implementation!")
-    // TODO: Crop bitmap based on region. Ensure region is within bounds.
-    // return Bitmap.createBitmap(source, region.left, region.top, region.width(), region.height())
-    return source // Placeholder
-}
-
-private fun runOcrWithMLKit(bitmap: Bitmap): String? {
-    Log.w("SnapsScreen", "runOcrWithMLKit: Needs implementation!")
-    // TODO: Implement ML Kit Text Recognition (on-device).
-    return null // Placeholder
-}
-
-private fun saveBitmapToFile(bitmap: Bitmap, file: File): Boolean {
-    Log.w("SnapsScreen", "saveBitmapToFile: Needs implementation! Path: ${file.absolutePath}")
-    // try { java.io.FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it); return true } }
-    // catch (e: java.io.IOException) { Log.e("SnapsScreen", "Error saving bitmap: ${e.message}"); return false }
-    return true // Placeholder
-}
-
-private fun renameOriginalImage(context: Context, originalUri: Uri, newFile: File): Boolean {
-    Log.w("SnapsScreen", "renameOriginalImage: Needs robust implementation! Original: $originalUri, New Path: ${newFile.absolutePath}")
-    return false // Placeholder
-}
-*/
 
 @Preview(showBackground = true, device = "id:pixel_6")
 @Composable
-fun SnapsScreenWithProcessingPreview() {
+fun SnapsScreenPreview() {
     Lasertac2Theme {
-        SnapsScreen(onNavigateBack = {} /* snapLocationDao parameter removed */)
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun ProcessSnapDialogPreview_Initial() {
-    Lasertac2Theme {
-        ProcessSnapDialog(
-            uiState = SnapProcessingState(showProcessingDialog = true),
-            onDismiss = {},
-            onPickFromGallery = {},
-            onTakePhoto = {},
-            onSaveSnap = {}
-        )
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun ProcessSnapDialogPreview_Processed() {
-    val placeholderBitmap = Bitmap.createBitmap(150, 75, Bitmap.Config.ARGB_8888).apply {
-        eraseColor(android.graphics.Color.LTGRAY)
-    }
-    Lasertac2Theme {
-        ProcessSnapDialog(
-            uiState = SnapProcessingState(
-                showProcessingDialog = true,
-                isLoading = false,
-                croppedPlateBitmap = placeholderBitmap,
-                extractedNumber = "MH20EE9090"
-            ),
-            onDismiss = {},
-            onPickFromGallery = {},
-            onTakePhoto = {},
-            onSaveSnap = {}
-        )
+        SnapsScreen(onNavigateBack = {}, snapLocationDao = MockSnapLocationDao())
     }
 }
