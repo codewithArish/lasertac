@@ -258,6 +258,7 @@ fun ImagePreviewScreen(
                 MainImageSection(snapDetail, onPrev, onNext, isPrevEnabled, isNextEnabled)
                 ContextualImagesSection(snapDetail)
                 ExcelDetailsGrid(snapDetail)
+                AdditionalDummyDetailsSection()
                 Spacer(modifier = Modifier.height(60.dp))
             }
         }
@@ -414,6 +415,29 @@ private fun ExcelDetailsGrid(snapDetail: SnapDetail) {
                 InfoCell("Longitude", snapDetail.longitude, Modifier.weight(1f))
             }
             InfoCell("Violation", snapDetail.violationSummary, highlight = true)
+        }
+    }
+}
+
+@Composable
+private fun AdditionalDummyDetailsSection() {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(modifier = Modifier.padding(all = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Additional Details (Dummy)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                InfoCell("Officer Name", "Inspector Sharma", Modifier.weight(1f))
+                InfoCell("Challan Amount", "₹ 1,000", Modifier.weight(1f), valueColor = Color(0xFFAA0000))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                InfoCell("Vehicle Type", "Sedan", Modifier.weight(1f))
+                InfoCell("Color", "White", Modifier.weight(1f))
+            }
+            InfoCell("Remarks", "Sample data for preview and layout testing.")
         }
     }
 }
