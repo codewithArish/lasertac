@@ -18,9 +18,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.EditLocation
-// Unused: import androidx.compose.material.icons.filled.Refresh
-// Unused: import androidx.compose.material.icons.filled.Save
-// Unused: import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,10 +25,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-// Unused: import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-// Unused: import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
@@ -42,8 +38,8 @@ import com.lasertrac.app.db.SnapLocationDao
 import com.lasertrac.app.ui.theme.Lasertac2Theme
 import com.lasertrac.app.ui.theme.TextColorLight
 import com.lasertrac.app.ui.theme.TopBarColor
-// Unused: import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -93,19 +89,6 @@ data class CurrentLocationDetails(
     val postalCode: String = "N/A"
 )
 
-fun CurrentLocationDetails.toSavedSnapLocationEntity(id: String, selectedPoliceStation: String?): SavedSnapLocationEntity {
-    return SavedSnapLocationEntity(
-        snapId = id,
-        latitude = this.latitude,
-        longitude = this.longitude,
-        fullAddress = this.addressLine,
-        district = this.district, 
-        country = this.country,
-        selectedCity = this.city, 
-        selectedState = this.state,
-        selectedPoliceArea = selectedPoliceStation ?: "N/A"
-    )
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -118,7 +101,7 @@ fun LocationScreen(
     var locationDetails by remember { mutableStateOf<CurrentLocationDetails?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var errorStateMessage by remember { mutableStateOf<String?>(null) }
-    var hasPermission by remember { mutableStateOf(false) } // Still used by permission flow
+    var hasPermission by remember { mutableStateOf(false) }
     var saveMessage by remember { mutableStateOf<String?>(null) }
 
     var manualState by remember { mutableStateOf("") }
@@ -130,10 +113,20 @@ fun LocationScreen(
     var citiesInSelectedState by remember { mutableStateOf<List<City>>(emptyList()) }
     var districtsInSelectedCity by remember { mutableStateOf<List<District>>(emptyList()) }
 
+    // State to hold the existing entity to prevent data loss on update
+    var existingSnapEntity by remember { mutableStateOf<SavedSnapLocationEntity?>(null) }
+
     val coroutineScope = rememberCoroutineScope()
     val fusedLocationClient = remember { LocationServices.getFusedLocationProviderClient(context) }
     val geocoder = remember { Geocoder(context, Locale.getDefault()) }
     val isPreview = LocalContext.current.javaClass.simpleName.contains("Preview")
+
+    // Load existing entity to preserve fields like imageUri on save
+    LaunchedEffect(snapId) {
+        if (!isPreview) {
+            existingSnapEntity = snapLocationDao.getSnapLocationById(snapId).firstOrNull()
+        }
+    }
 
     LaunchedEffect(locationDetails) {
         locationDetails?.let { details ->
@@ -153,7 +146,7 @@ fun LocationScreen(
                                     manualDistrict = matchedDistrictData.name
                                     manualZipCode = matchedDistrictData.primaryZip
                                 }
-                            } // Removed empty else-if block here
+                            }
                         }
                     }
                 }
@@ -195,7 +188,7 @@ fun LocationScreen(
             manualPoliceStation = "Connaught Place PS"
             manualZipCode = "110001"
         } else {
-             val permissionCheckResult = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
+            val permissionCheckResult = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
             if (permissionCheckResult == PackageManager.PERMISSION_GRANTED) {
                 hasPermission = true
                 fetchDeviceLocation(context, fusedLocationClient, geocoder) { result ->
@@ -259,11 +252,10 @@ fun LocationScreen(
 
                     Button(
                         onClick = { // Update GPS Location
-                             if (isPreview) {
+                            if (isPreview) {
                                 isLoading = true; saveMessage = null
-                                // Simulating network delay for preview
-                                coroutineScope.launch { 
-                                    kotlinx.coroutines.delay(500) // Explicitly use delay here if needed, or remove import if not.
+                                coroutineScope.launch {
+                                    kotlinx.coroutines.delay(500)
                                     locationDetails = CurrentLocationDetails(28.7041, 77.1025, "456 Updated Preview Ave", "Gurugram", "Sector 29", "Haryana", "India", "122001")
                                     isLoading = false; saveMessage = "Preview location refreshed."
                                 }
@@ -277,25 +269,32 @@ fun LocationScreen(
                             }
                         },
                         modifier = Modifier.fillMaxWidth()
-                    ) { 
-                        // Icon(Icons.Filled.Refresh, "Update Location") // Kept imports for this if you re-add icons
-                        Text("Update Current Location (GPS)") 
+                    ) {
+                        Text("Update Current Location (GPS)")
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Button(
                         onClick = { // Save GPS Location
-                         locationDetails?.let { currentDetails ->
-                            coroutineScope.launch {
-                                val entity = currentDetails.toSavedSnapLocationEntity(snapId, manualPoliceStation.ifBlank { "N/A" })
-                                snapLocationDao.insertOrUpdateSnapLocation(entity)
-                                saveMessage = "GPS Location Saved! (City: ${entity.selectedCity}, Dist: ${entity.district})"
+                            locationDetails?.let { currentDetails ->
+                                coroutineScope.launch {
+                                    val entityToSave = existingSnapEntity?.copy(
+                                        latitude = currentDetails.latitude,
+                                        longitude = currentDetails.longitude,
+                                        fullAddress = currentDetails.addressLine,
+                                        district = currentDetails.district,
+                                        country = currentDetails.country,
+                                        selectedCity = currentDetails.city,
+                                        selectedState = currentDetails.state
+                                    ) ?: return@launch // Should not happen if snapId is valid
+
+                                    snapLocationDao.insertOrUpdateSnapLocation(entityToSave)
+                                    saveMessage = "GPS Location Saved! (City: ${entityToSave.selectedCity}, Dist: ${entityToSave.district})"
+                                }
                             }
-                         }
                         },
                         modifier = Modifier.fillMaxWidth()
-                    ) { 
-                        // Icon(Icons.Filled.Save, "Save Location") 
-                        Text("Save Current Location (GPS)") 
+                    ) {
+                        Text("Save Current Location (GPS)")
                     }
                     Spacer(modifier = Modifier.height(16.dp))
 
@@ -328,41 +327,22 @@ fun LocationScreen(
                         onManualZipCodeChange = { manualZipCode = it },
                         onSaveManualLocation = {
                             coroutineScope.launch {
-                                try {
-                                    val currentLat = locationDetails?.latitude ?: 0.0
-                                    val currentLon = locationDetails?.longitude ?: 0.0
-                                    val currentCountry = locationDetails?.country ?: "N/A"
+                                val entityToSave = existingSnapEntity?.copy(
+                                    fullAddress = "$manualDistrict, $manualCity, $manualState $manualZipCode".trim().replaceFirst("^N/A, ", "").replaceFirst(", N/A", ""),
+                                    selectedState = manualState.ifBlank { locationDetails?.state ?: "N/A" },
+                                    selectedCity = manualCity.ifBlank { locationDetails?.city ?: "N/A" },
+                                    district = manualDistrict.ifBlank { locationDetails?.district ?: "N/A" },
+                                    selectedPoliceArea = manualPoliceStation.ifBlank { "N/A" }
+                                ) ?: return@launch // Should not happen if snapId is valid
 
-                                    val finalState = manualState.ifBlank { locationDetails?.state ?: "N/A" }
-                                    val finalCity = manualCity.ifBlank { locationDetails?.city ?: "N/A" }
-                                    val finalDistrict = manualDistrict.ifBlank { locationDetails?.district ?: "N/A" }
-                                    val finalZip = manualZipCode.ifBlank { locationDetails?.postalCode ?: "N/A" }
-                                    val finalPolice = manualPoliceStation.ifBlank { "N/A" }
+                                snapLocationDao.insertOrUpdateSnapLocation(entityToSave)
+                                saveMessage = "Manual Location Saved!"
+                                Log.d("LocationScreen", "Manual location saved for $snapId as $entityToSave")
 
-                                    val manualFullAddress = "$finalDistrict, $finalCity, $finalState $finalZip".trim().replaceFirst("^N/A, ", "").replaceFirst(", N/A", "")
-
-                                    val entity = SavedSnapLocationEntity(
-                                        snapId = snapId, latitude = currentLat, longitude = currentLon,
-                                        fullAddress = manualFullAddress, country = currentCountry,
-                                        selectedState = finalState, selectedCity = finalCity, district = finalDistrict,
-                                        selectedPoliceArea = finalPolice
-                                    )
-                                    snapLocationDao.insertOrUpdateSnapLocation(entity)
-                                    saveMessage = "Manual Location Saved!"
-                                    Log.d("LocationScreen", "Manual location saved for $snapId as $entity")
-
-                                    locationDetails = locationDetails?.copy(
-                                        addressLine = entity.fullAddress, city = entity.selectedCity, state = entity.selectedState,
-                                        postalCode = finalZip, district = entity.district
-                                    ) ?: CurrentLocationDetails(
-                                        latitude = entity.latitude, longitude = entity.longitude, addressLine = entity.fullAddress,
-                                        city = entity.selectedCity, state = entity.selectedState, country = entity.country,
-                                        postalCode = finalZip, district = entity.district
-                                    )
-                                } catch (e: Exception) {
-                                    saveMessage = "Error saving: ${e.localizedMessage}"
-                                    Log.e("LocationScreen", "Error save manual", e)
-                                }
+                                locationDetails = locationDetails?.copy(
+                                    addressLine = entityToSave.fullAddress, city = entityToSave.selectedCity, state = entityToSave.selectedState,
+                                    postalCode = manualZipCode, district = entityToSave.district
+                                )
                             }
                         }
                     )
@@ -370,14 +350,14 @@ fun LocationScreen(
                         Text(
                             text = it,
                             color = if (it.startsWith("Error")) MaterialTheme.colorScheme.error
-                                    else if (it.contains("Saved")) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.secondary,
+                            else if (it.contains("Saved")) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.secondary,
                             modifier = Modifier.padding(top = 12.dp)
                         )
                     }
                 }
                 else -> {
-                    Text("Acquiring location... Ensure services and permissions are enabled.", textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(vertical = 50.dp))
+                    Text("Acquiring location... Ensure services and permissions are enabled.", textAlign = TextAlign.Center, modifier = Modifier.padding(vertical = 50.dp))
                     Button(onClick = {
                         if (isPreview) { saveMessage = "Permission check N/A in Preview." }
                         else { locationPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION) }
@@ -447,9 +427,8 @@ fun ManualLocationEntryCard(
 
             OutlinedTextField(value = manualZipCode, onValueChange = onManualZipCodeChange, label = { Text("Zip Code (Auto-filled, Editable)") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number))
             Spacer(Modifier.height(16.dp))
-            Button(onClick = onSaveManualLocation, modifier = Modifier.fillMaxWidth()) { 
-                // Icon(Icons.Filled.Save, "Save Manual Details") // Kept Icon import if you re-add
-                Text("Save Manual Details") 
+            Button(onClick = onSaveManualLocation, modifier = Modifier.fillMaxWidth()) {
+                Text("Save Manual Details")
             }
         }
     }
@@ -492,7 +471,7 @@ private fun mapAndroidAddressToDetails(address: Address, lat: Double, lon: Doubl
 
 @Composable
 fun CurrentLocationInfoCard(details: CurrentLocationDetails) {
-     Card(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)) {
+    Card(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text("Device Location", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 10.dp))
             LocationDetailRow(label = "Lat/Lon:", value = String.format(Locale.US, "%.5f, %.5f", details.latitude, details.longitude))
@@ -517,11 +496,10 @@ fun LocationDisplayErrorCard(errorMessage: String, onRetry: () -> Unit) {
             modifier = Modifier.padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Icon(Icons.Filled.Warning, "Error") // Icon import androidx.compose.material.icons.filled.Warning removed
             Spacer(modifier = Modifier.height(8.dp))
             Text("Location Data Error", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onErrorContainer, fontWeight = FontWeight.Bold)
             Spacer(modifier = Modifier.height(6.dp))
-            Text(errorMessage, /*fontSize = 13.sp,*/ textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.padding(horizontal = 8.dp))
+            Text(errorMessage, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.padding(horizontal = 8.dp))
             Spacer(modifier = Modifier.height(12.dp))
             Button(onClick = onRetry) {
                 Text(if (errorMessage.contains("permission denied")) "Grant Permission" else "Retry")
@@ -538,12 +516,14 @@ private fun LocationDetailRow(label: String, value: String) {
     }
 }
 
-// Renamed to avoid conflict and corrected implementation
 class LocationScreenMockDao : SnapLocationDao {
     private val mockStorage = mutableMapOf<String, SavedSnapLocationEntity>()
     override suspend fun insertOrUpdateSnapLocation(snapLocation: SavedSnapLocationEntity) { mockStorage[snapLocation.snapId] = snapLocation }
     override fun getSnapLocationById(snapId: String): Flow<SavedSnapLocationEntity?> = flowOf(mockStorage[snapId])
     override fun getAllSnapLocations(): Flow<List<SavedSnapLocationEntity>> = flowOf(mockStorage.values.toList())
+    override suspend fun deleteSnapsByIds(snapIds: List<String>) {
+        snapIds.forEach { mockStorage.remove(it) }
+    }
 }
 
 @Preview(showBackground = true, device = "id:pixel_6")

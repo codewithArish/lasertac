@@ -14,6 +14,7 @@ import android.provider.MediaStore
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
@@ -166,6 +167,7 @@ private fun loadBitmapFromAny(context: Context, imageSource: Any): Bitmap? {
             try {
                 BitmapFactory.decodeResource(context.resources, imageSource)
             } catch (e: Exception) {
+                Log.e("PdfUtils", "Error loading bitmap from resource: ${e.message}")
                 null
             }
         }
@@ -175,10 +177,15 @@ private fun loadBitmapFromAny(context: Context, imageSource: Any): Bitmap? {
                     BitmapFactory.decodeStream(it)
                 }
             } catch (e: Exception) {
+                Log.e("PdfUtils", "Error loading bitmap from URI: ${e.message}")
+                e.printStackTrace()
                 null
             }
         }
-        else -> null
+        else -> {
+            Log.w("PdfUtils", "Unsupported image source type: ${imageSource.javaClass.name}")
+            null
+        }
     }
 }
 
