@@ -2,6 +2,7 @@ package com.lasertrac.app
 
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Paint
@@ -189,6 +190,38 @@ private fun loadBitmapFromAny(context: Context, imageSource: Any): Bitmap? {
     }
 }
 
+private fun shareSnapDetailsAsText(context: Context, snapDetail: SnapDetail) {
+    val shareText = """
+        Challan Violation Report
+        ------------------------
+        Record ID: ${snapDetail.id}
+        Record Number: ${snapDetail.recordNr}
+        Date & Time: ${snapDetail.dateTime}
+        Operator ID: ${snapDetail.operatorId}
+        Device ID: ${snapDetail.deviceId}
+        Speed Limit: ${snapDetail.speedLimit} km/h
+        Vehicle Speed: ${snapDetail.speed} km/h
+        Registration Number: ${snapDetail.regNr}
+        Registration Status: ${snapDetail.regNrStatus}
+        Location: ${snapDetail.location}
+        GPS: ${snapDetail.latitude}, ${snapDetail.longitude}
+        District: ${snapDetail.district}
+        Police Station: ${snapDetail.policeStation}
+        Address: ${snapDetail.address}
+        Violation Summary: ${snapDetail.violationSummary}
+        Upload Status: ${snapDetail.uploadStatus}
+        Violation Management Link: ${snapDetail.violationManagementLink}
+        Access Link: ${snapDetail.accessLink}
+    """.trimIndent()
+
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(Intent.EXTRA_SUBJECT, "Challan Report: ${snapDetail.recordNr}")
+        putExtra(Intent.EXTRA_TEXT, shareText)
+    }
+    context.startActivity(Intent.createChooser(intent, "Share Violation Details"))
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ImagePreviewScreen(
@@ -259,7 +292,8 @@ fun ImagePreviewScreen(
                             actionStatus = ActionStatus.SUCCESS
                         }
                     },
-                    onPrintClick = { generateChallanPdf(context, snapDetail) }
+                    onPrintClick = { generateChallanPdf(context, snapDetail) },
+                    onShareClick = { shareSnapDetailsAsText(context, snapDetail) }
                 )
 
                 MainImageSection(snapDetail, onPrev, onNext, isPrevEnabled, isNextEnabled)
@@ -396,7 +430,11 @@ private fun ContextualImagesSection(snapDetail: SnapDetail) {
 
 @Composable
 private fun ExcelDetailsGrid(snapDetail: SnapDetail) {
-    Card(modifier = Modifier.fillMaxWidth(), elevation = CardDefaults.cardElevation(defaultElevation = 1.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
         Column(modifier = Modifier.padding(all = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Violation Details", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
@@ -407,7 +445,7 @@ private fun ExcelDetailsGrid(snapDetail: SnapDetail) {
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 InfoCell("Speed Limit", "${snapDetail.speedLimit} km/h", Modifier.weight(1f))
-                InfoCell("Speed", "${snapDetail.speed} km/h", Modifier.weight(1f), valueColor = if (snapDetail.speed > snapDetail.speedLimit) MaterialTheme.colorScheme.error else androidx.compose.ui.graphics.Color.Unspecified)
+                InfoCell("Speed", "${snapDetail.speed} km/h", Modifier.weight(1f), valueColor = if (snapDetail.speed > snapDetail.speedLimit) MaterialTheme.colorScheme.error else Color.Unspecified)
                 InfoCell("Reg Nr", snapDetail.regNr, Modifier.weight(1f), valueColor = if(snapDetail.regNrStatus == "Valid") Color(0xFF008800) else MaterialTheme.colorScheme.error)
             }
             InfoCell("Evidence Date", snapDetail.evidenceDate)
@@ -421,6 +459,16 @@ private fun ExcelDetailsGrid(snapDetail: SnapDetail) {
                 InfoCell("Longitude", snapDetail.longitude, Modifier.weight(1f))
             }
             InfoCell("Violation", snapDetail.violationSummary, highlight = true)
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            InfoCell("Location", snapDetail.location)
+            InfoCell("Violation Distance", snapDetail.violationDistance)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                InfoCell("Registration Status", snapDetail.regNrStatus, Modifier.weight(1f))
+                InfoCell("Upload Status", snapDetail.uploadStatus, Modifier.weight(1f))
+            }
+            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+            InfoCell("Violation Management Link", snapDetail.violationManagementLink)
+            InfoCell("Access Link", snapDetail.accessLink)
         }
     }
 }
@@ -440,13 +488,19 @@ private fun ActionButtonsSection(
     onUploadClick: () -> Unit,
     isUploadEnabled: Boolean,
     onPrintClick: () -> Unit,
-    onRejectClick: () -> Unit
+    onRejectClick: () -> Unit,
+    onShareClick: () -> Unit
 ) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
-        Button(onClick = onUpdateClick, enabled = snapDetail.status == SnapStatus.PENDING, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)) { Text("Update") }
-        Button(onClick = onUploadClick, enabled = isUploadEnabled, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))) { Text("Upload") }
-        Button(onClick = onPrintClick, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF9C27B0))) { Text("Print") }
-        Button(onClick = onRejectClick, enabled = snapDetail.status != SnapStatus.REJECTED, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Reject") }
+    Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
+            Button(onClick = onUpdateClick, enabled = snapDetail.status == SnapStatus.PENDING, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)) { Text("Update") }
+            Button(onClick = onUploadClick, enabled = isUploadEnabled, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))) { Text("Upload") }
+            Button(onClick = onRejectClick, enabled = snapDetail.status != SnapStatus.REJECTED, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Reject") }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)) {
+            Button(onClick = onPrintClick, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF9C27B0))) { Text("Print") }
+            Button(onClick = onShareClick, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3))) { Text("Share") }
+        }
     }
 }
 
@@ -660,8 +714,8 @@ private fun ImagePreviewScreenPreview() {
         licensePlateImage = R.drawable.ic_snaps_custom,
         mapImage = R.drawable.ic_snaps_custom,
         violationSummary = "Overspeeding",
-        violationManagementLink = "",
-        accessLink = "",
+        violationManagementLink = "http://example.com/violation/manage/PREV1",
+        accessLink = "http://example.com/access/PREV1",
         regNrStatus = "Valid"
     )
     Lasertac2Theme {

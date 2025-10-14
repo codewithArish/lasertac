@@ -1,11 +1,6 @@
 package com.lasertrac.app
 
-import android.Manifest
-import android.content.Context
-import android.net.Uri
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -28,7 +23,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -41,7 +35,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -73,7 +66,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import coil.compose.AsyncImage
 import com.lasertrac.app.db.SavedSnapLocationEntity
@@ -81,20 +73,14 @@ import com.lasertrac.app.db.SnapLocationDao
 import com.lasertrac.app.ui.theme.Lasertac2Theme
 import com.lasertrac.app.ui.theme.TextColorLight
 import com.lasertrac.app.ui.theme.TopBarColor
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.File
-import java.io.FileOutputStream
-import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
-import java.util.UUID
 
 // Mapper from DB Entity to UI Model
 fun SavedSnapLocationEntity.toSnapDetail(): SnapDetail {
@@ -130,24 +116,6 @@ fun SavedSnapLocationEntity.toSnapDetail(): SnapDetail {
     )
 }
 
-fun SnapDetail.toDbSnapLocationEntity(): SavedSnapLocationEntity {
-    // Ensure the image is a Uri and convert to a string for DB storage
-    val imageUriString = if (mainImage is Uri) mainImage.toString() else null
-
-    return SavedSnapLocationEntity(
-        snapId = this.id,
-        latitude = this.latitude.toDoubleOrNull() ?: 0.0,
-        longitude = this.longitude.toDoubleOrNull() ?: 0.0,
-        fullAddress = this.address,
-        district = this.district,
-        country = "", // Assuming default values for these
-        selectedCity = "",
-        selectedState = "",
-        selectedPoliceArea = this.policeStation,
-        imageUri = imageUriString
-    )
-}
-
 fun Long.toFormattedDateString(pattern: String = "dd-MM-yyyy"): String {
     return SimpleDateFormat(pattern, Locale.getDefault()).format(Date(this))
 }
@@ -160,74 +128,11 @@ fun getTemporaryDevelopmentSnaps(): List<SnapDetail> {
     val todayDateTimeStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
 
     return listOf(
-        SnapDetail("dev_mock1", "DL5CQ1234", todayDateTimeStr, 95, 80, "City Highway", todayDateStr, "Metro District", "Metro PS", "Address for Today 1", "10.1", "11.1", "MREC-TODAY-1", "MOCK-DEV-TODAY-1", "MOCK-OP", "110 m", "Pending", SnapStatus.PENDING, R.drawable.ic_snaps_custom, R.drawable.ic_snaps_custom, R.drawable.ic_snaps_custom, "Overspeeding by 15 km/h", "", "", "Valid"),
-        SnapDetail("dev_mock2", "MH14AB5678", todayDateTimeStr, 65, 50, "Suburban Road", todayDateStr, "Suburban District", "Suburban PS", "Address for Today 2", "10.2", "11.2", "MREC-TODAY-2", "MOCK-DEV-TODAY-2", "MOCK-OP", "90 m", "Uploaded", SnapStatus.UPLOADED, R.drawable.ic_snaps_custom, R.drawable.ic_snaps_custom, R.drawable.ic_snaps_custom, "Overspeeding by 15 km/h", "", "", "Valid"),
-        SnapDetail("dev_mock3", "KA01XY9999", SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(yesterdayDateTime), 80, 80, "State Highway 5", yesterdayDateStr, "Rural District", "Rural PS", "Address for Yesterday 1", "10.3", "11.3", "MREC-YDAY-1", "MOCK-DEV-YDAY-1", "MOCK-OP-2", "0 m", "Rejected", SnapStatus.REJECTED, R.drawable.ic_snaps_custom, R.drawable.ic_snaps_custom, R.drawable.ic_snaps_custom, "No violation.", "", "", "Invalid")
-    )
-}
-
-/**
- * Copies an image from a given URI to the app's internal storage.
- * This creates a permanent, reliable copy that the app can always access.
- * @return The URI of the new, permanently stored image, or null on failure.
- */
-suspend fun saveImageToInternalStorage(context: Context, uri: Uri): Uri? {
-    return withContext(Dispatchers.IO) {
-        try {
-            val inputStream = context.contentResolver.openInputStream(uri)
-            val file = createImageFile(context, "_persistent") // Create a unique file
-            val outputStream = FileOutputStream(file)
-            inputStream?.use { input ->
-                outputStream.use { output ->
-                    input.copyTo(output)
-                }
-            }
-            FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
-        } catch (e: IOException) {
-            e.printStackTrace()
-            null
-        }
-    }
-}
-
-fun createImageFile(context: Context, suffix: String = ""): File {
-    val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
-    val imageFileName = "JPEG_${timeStamp}${suffix}"
-    // Use app's internal cache directory for captured images
-    val storageDir = File(context.cacheDir, "images").apply { mkdirs() }
-    return File.createTempFile(imageFileName, ".jpg", storageDir)
-}
-
-
-fun createNewSnap(imageUri: Uri, deviceId: String): SnapDetail {
-    val todayDateStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
-    val todayDateTimeStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
-    return SnapDetail(
-        id = UUID.randomUUID().toString(),
-        regNr = "",
-        dateTime = todayDateTimeStr,
-        speed = 0,
-        speedLimit = 0,
-        location = "From $deviceId",
-        evidenceDate = todayDateStr,
-        district = "",
-        policeStation = "",
-        address = "",
-        latitude = "0.0",
-        longitude = "0.0",
-        recordNr = "",
-        deviceId = deviceId,
-        operatorId = "USER",
-        violationDistance = "",
-        uploadStatus = "Pending",
-        status = SnapStatus.PENDING,
-        mainImage = imageUri,
-        licensePlateImage = imageUri, // Placeholder, can be updated after processing
-        mapImage = imageUri, // Placeholder
-        violationSummary = "",
-        violationManagementLink = "",
-        accessLink = "",
-        regNrStatus = ""
+        SnapDetail("dev_mock1", "DL5CQ1234", todayDateTimeStr, 95, 80, "City Highway", todayDateStr, "Metro District", "Metro PS", "Address for Today 1", "10.1", "11.1", "MREC-TODAY-1", "MOCK-DEV-TODAY-1", "MOCK-OP", "110 m", "Pending", SnapStatus.PENDING, R.drawable.ic_snaps_custom, R.drawable.ic_snaps_custom, R.drawable.ic_snaps_custom, "Overspeeding by 15 km/h", "http://example.com/violation/manage/MOCK1", "http://example.com/access/MOCK1", "Valid"),
+        SnapDetail("dev_mock2", "MH14AB5678", todayDateTimeStr, 65, 50, "Suburban Road", todayDateStr, "Suburban District", "Suburban PS", "Address for Today 2", "10.2", "11.2", "MREC-TODAY-2", "MOCK-DEV-TODAY-2", "MOCK-OP", "90 m", "Uploaded", SnapStatus.UPLOADED, R.drawable.ic_snaps_custom, R.drawable.ic_snaps_custom, R.drawable.ic_snaps_custom, "Overspeeding by 15 km/h", "http://example.com/violation/manage/MOCK2", "http://example.com/access/MOCK2", "Valid"),
+        SnapDetail("dev_mock3", "KA01XY9999", SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(yesterdayDateTime), 80, 80, "State Highway 5", yesterdayDateStr, "Rural District", "Rural PS", "Address for Yesterday 1", "10.3", "11.3", "MREC-YDAY-1", "MOCK-DEV-YDAY-1", "MOCK-OP-2", "0 m", "Rejected", SnapStatus.REJECTED, R.drawable.ic_snaps_custom, R.drawable.ic_snaps_custom, R.drawable.ic_snaps_custom, "No violation.", "http://example.com/violation/manage/MOCK3", "http://example.com/access/MOCK3", "Invalid"),
+        SnapDetail("dev_mock4", "TN22C5555", todayDateTimeStr, 120, 100, "National Highway 44", todayDateStr, "Chennai District", "Poonamallee PS", "Near Sriperumbudur", "12.9", "80.0", "MREC-TODAY-3", "MOCK-DEV-TODAY-3", "MOCK-OP", "200 m", "Pending", SnapStatus.PENDING, R.drawable.ic_snaps_custom, R.drawable.ic_snaps_custom, R.drawable.ic_snaps_custom, "Overspeeding by 20 km/h", "http://example.com/violation/manage/MOCK4", "http://example.com/access/MOCK4", "Valid"),
+        SnapDetail("dev_mock5", "UP32J1111", SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(yesterdayDateTime), 70, 70, "Yamuna Expressway", yesterdayDateStr, "Gautam Buddh Nagar", "Noida Sector 39 PS", "Near Mahamaya Flyover", "28.5", "77.3", "MREC-YDAY-2", "MOCK-DEV-YDAY-2", "MOCK-OP-3", "0 m", "Updated", SnapStatus.UPDATED, R.drawable.ic_snaps_custom, R.drawable.ic_snaps_custom, R.drawable.ic_snaps_custom, "Driving at speed limit.", "http://example.com/violation/manage/MOCK5", "http://example.com/access/MOCK5", "Valid")
     )
 }
 
@@ -239,7 +144,6 @@ fun SnapsScreen(onNavigateBack: () -> Unit, snapLocationDao: SnapLocationDao) {
     var isSearchActive by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     var showInfoDialog by remember { mutableStateOf(false) }
-    var showAddSnapDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val allSnapDetails = remember { mutableStateListOf<SnapDetail>() }
@@ -256,48 +160,6 @@ fun SnapsScreen(onNavigateBack: () -> Unit, snapLocationDao: SnapLocationDao) {
                 // If DB is empty, show mock data. Remove this else block in production.
                 allSnapDetails.addAll(getTemporaryDevelopmentSnaps())
             }
-        }
-    }
-
-    var tempImageUri by remember { mutableStateOf<Uri?>(null) }
-
-    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
-        uri?.let {
-            coroutineScope.launch {
-                val permanentUri = saveImageToInternalStorage(context, it)
-                if (permanentUri != null) {
-                    val newSnap = createNewSnap(permanentUri, "Gallery")
-                    snapLocationDao.insertOrUpdateSnapLocation(newSnap.toDbSnapLocationEntity())
-                    Toast.makeText(context, "Snap saved!", Toast.LENGTH_SHORT).show()
-                } else {
-                    Toast.makeText(context, "Failed to save image.", Toast.LENGTH_SHORT).show()
-                }
-            }
-        }
-    }
-
-    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
-        if (success) {
-            tempImageUri?.let {
-                coroutineScope.launch {
-                    val newSnap = createNewSnap(it, "Camera")
-                    snapLocationDao.insertOrUpdateSnapLocation(newSnap.toDbSnapLocationEntity())
-                    Toast.makeText(context, "Snap saved!", Toast.LENGTH_SHORT).show()
-                }
-            }
-        } else {
-            Toast.makeText(context, "Camera capture failed", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    val cameraPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { isGranted ->
-        if (isGranted) {
-            val newImageFile = createImageFile(context)
-            val newImageUri = FileProvider.getUriForFile(context, "${context.packageName}.provider", newImageFile)
-            tempImageUri = newImageUri
-            cameraLauncher.launch(newImageUri)
-        } else {
-            Toast.makeText(context, "Camera permission is required", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -322,14 +184,6 @@ fun SnapsScreen(onNavigateBack: () -> Unit, snapLocationDao: SnapLocationDao) {
         }
     }
 
-    if (showAddSnapDialog) {
-        AddSnapDialog(
-            onDismiss = { showAddSnapDialog = false },
-            onFromGallery = { showAddSnapDialog = false; galleryLauncher.launch("image/*") },
-            onFromCamera = { showAddSnapDialog = false; cameraPermissionLauncher.launch(Manifest.permission.CAMERA) }
-        )
-    }
-
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
@@ -351,15 +205,8 @@ fun SnapsScreen(onNavigateBack: () -> Unit, snapLocationDao: SnapLocationDao) {
                 )
             } else {
                 NormalTopAppBar(
-                    isSearchActive, searchQuery, { searchQuery = it }, { isSearchActive = !isSearchActive }, onNavigateBack, { showDatePicker = true }, { showInfoDialog = true }, { showAddSnapDialog = true }
+                    isSearchActive, searchQuery, { searchQuery = it }, { isSearchActive = !isSearchActive }, onNavigateBack, { showDatePicker = true }, { showInfoDialog = true }
                 )
-            }
-        },
-        floatingActionButton = {
-            if (!selectionMode) {
-                FloatingActionButton({ showAddSnapDialog = true }, containerColor = MaterialTheme.colorScheme.primary) {
-                    Icon(Icons.Default.Add, "Add Snap", tint = MaterialTheme.colorScheme.onPrimary)
-                }
             }
         }
     ) { innerPadding ->
@@ -453,8 +300,7 @@ private fun NormalTopAppBar(
     onTog: () -> Unit, 
     onBack: () -> Unit, 
     onDate: () -> Unit, 
-    onInfo: () -> Unit,
-    onAddSnap: () -> Unit
+    onInfo: () -> Unit
 ) {
     TopAppBar(
         title = {
@@ -472,7 +318,6 @@ private fun NormalTopAppBar(
             if (isSearchActive) {
                 IconButton({ onQ(""); onTog() }) { Icon(Icons.Default.Close, "Close Search", tint = TextColorLight) }
             } else {
-                IconButton(onAddSnap) { Icon(Icons.Default.Add, "Add Snap", tint = TextColorLight) }
                 IconButton(onDate) { Icon(Icons.Default.CalendarToday, "Select Date", tint = TextColorLight) }
                 IconButton(onInfo) { Icon(Icons.Default.Info, "Status Info", tint = TextColorLight) }
                 IconButton(onTog) { Icon(Icons.Default.Search, "Search Snaps", tint = TextColorLight) }
@@ -519,25 +364,6 @@ fun SnapCard(snap: SnapDetail, sel: Boolean, selMode: Boolean, onClick: () -> Un
 }
 
 @Composable
-fun AddSnapDialog(onDismiss: () -> Unit, onFromGallery: () -> Unit, onFromCamera: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Add New Snap") },
-        text = { Text("Choose an option to add a new snap.") },
-        confirmButton = {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                horizontalArrangement = Arrangement.SpaceAround
-            ) {
-                TextButton(onFromGallery) { Text("From Gallery") }
-                TextButton(onFromCamera) { Text("From Camera") }
-            }
-        },
-        dismissButton = { TextButton(onDismiss) { Text("Cancel") } }
-    )
-}
-
-@Composable
 fun StatusInfoDialog(onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss, 
@@ -566,6 +392,22 @@ class MockSnapLocationDao : SnapLocationDao {
     override fun getSnapLocationById(snapId: String): Flow<SavedSnapLocationEntity?> = flowOf(null)
     override fun getAllSnapLocations(): Flow<List<SavedSnapLocationEntity>> = flowOf(getTemporaryDevelopmentSnaps().map { it.toDbSnapLocationEntity() })
     override suspend fun deleteSnapsByIds(snapIds: List<String>) {}
+
+    private fun SnapDetail.toDbSnapLocationEntity(): SavedSnapLocationEntity {
+        val imageUriString = if (mainImage is android.net.Uri) mainImage.toString() else null
+        return SavedSnapLocationEntity(
+            snapId = this.id,
+            latitude = this.latitude.toDoubleOrNull() ?: 0.0,
+            longitude = this.longitude.toDoubleOrNull() ?: 0.0,
+            fullAddress = this.address,
+            district = this.district,
+            country = "",
+            selectedCity = "",
+            selectedState = "",
+            selectedPoliceArea = this.policeStation,
+            imageUri = imageUriString
+        )
+    }
 }
 
 @Preview(showBackground = true, device = "id:pixel_6")
