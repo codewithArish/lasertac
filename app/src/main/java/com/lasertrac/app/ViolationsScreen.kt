@@ -59,10 +59,23 @@ data class Violation(
     val actName: String
 )
 
+// Default violations that should always be present
+private fun getDefaultViolations(): List<Violation> {
+    return listOf(
+        Violation("1110", "Overspeeding Two/Three Wheeler"),
+        Violation("1111", "Overspeeding LMV"),
+        Violation("1112", "Overspeeding HMV"),
+        Violation("1114", "Wrong Side Two / Three Wheeler"),
+        Violation("1114", "Wrong Side LMV"),
+        Violation("1114", "Wrong Side HMV"),
+        Violation("1114", "No Helmet")
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ViolationsScreen(onNavigateBack: () -> Unit) {
-    var violations by remember { mutableStateOf(mutableStateListOf<Violation>()) }
+    var violations by remember { mutableStateOf(mutableStateListOf<Violation>().apply { addAll(getDefaultViolations()) }) }
     var showDialog by remember { mutableStateOf(false) }
     var editingIndex by remember { mutableStateOf(-1) }
     var actId by remember { mutableStateOf("") }
@@ -130,34 +143,20 @@ fun ViolationsScreen(onNavigateBack: () -> Unit) {
             }
 
             // Violations list
-            if (violations.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "No violations added yet.\nClick 'ADD NEW' to add your first violation.",
-                        color = Color.Gray,
-                        fontSize = 16.sp,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                itemsIndexed(violations) { index, violation ->
+                    ViolationItem(
+                        violation = violation,
+                        index = index + 1,
+                        onEditClick = {
+                            actId = violation.actId
+                            actName = violation.actName
+                            editingIndex = index
+                            showDialog = true
+                        }
                     )
-                }
-            } else {
-                LazyColumn(
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    itemsIndexed(violations) { index, violation ->
-                        ViolationItem(
-                            violation = violation,
-                            index = index + 1,
-                            onEditClick = {
-                                actId = violation.actId
-                                actName = violation.actName
-                                editingIndex = index
-                                showDialog = true
-                            }
-                        )
-                    }
                 }
             }
         }
@@ -243,15 +242,10 @@ fun ViolationItem(
                 // Violation details
                 Column {
                     Text(
-                        text = "Act ID: ${violation.actId}",
+                        text = "${violation.actId} ${violation.actName}",
                         color = Color.White,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        text = violation.actName,
-                        color = Color.Gray,
-                        fontSize = 14.sp
                     )
                 }
             }
