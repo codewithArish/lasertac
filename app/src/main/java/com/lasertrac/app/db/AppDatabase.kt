@@ -7,10 +7,11 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [PoliceStation::class, SavedSnapLocationEntity::class], version = 2) // Incremented version
+@Database(entities = [PoliceStation::class, SavedSnapLocationEntity::class, ViolationEntity::class], version = 3)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun policeStationDao(): PoliceStationDao
     abstract fun snapLocationDao(): SnapLocationDao
+    abstract fun violationDao(): ViolationDao
 
     companion object {
         @Volatile
@@ -23,6 +24,15 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // Migration from version 2 to 3: Create violations table
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS violations (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, actId TEXT NOT NULL, actName TEXT NOT NULL)"
+                )
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -30,7 +40,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "lasertrac_database"
                 )
-                .addMigrations(MIGRATION_1_2) // Add the migration
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
                 INSTANCE = instance
                 instance

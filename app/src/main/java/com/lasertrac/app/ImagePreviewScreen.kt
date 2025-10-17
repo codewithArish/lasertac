@@ -497,7 +497,7 @@ private fun ExcelDetailsGrid(snapDetail: SnapDetail) {
             }
             HighlightedViolationCell(value = snapDetail.violationSummary)
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-            InfoCell("Location", snapDetail.location)
+            InfoCell("Location", resolveDisplayLocation(snapDetail))
             InfoCell("Violation Distance", snapDetail.violationDistance)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 InfoCell("Registration Status", snapDetail.regNrStatus, Modifier.weight(1f))
@@ -621,6 +621,16 @@ private fun ViolationSelector(
             }
         }
     }
+}
+
+// Prefer address if present, else lat/lon, else fallback to provided location string
+private fun resolveDisplayLocation(snapDetail: SnapDetail): String {
+    val address = snapDetail.address.ifBlank { "" }
+    if (address.isNotEmpty() && address != "N/A") return address
+    val lat = snapDetail.latitude.ifBlank { "" }
+    val lon = snapDetail.longitude.ifBlank { "" }
+    if (lat.isNotEmpty() && lon.isNotEmpty() && lat != "N/A" && lon != "N/A") return "$lat, $lon"
+    return snapDetail.location
 }
 
 @Composable
