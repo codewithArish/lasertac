@@ -39,7 +39,6 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -53,29 +52,10 @@ import androidx.compose.ui.unit.sp
 import com.lasertrac.app.ui.theme.TextColorLight
 import com.lasertrac.app.ui.theme.TopBarColor
 
-// Data model for violations
-data class Violation(
-    val actId: String,
-    val actName: String
-)
-
-// Default violations that should always be present
-private fun getDefaultViolations(): List<Violation> {
-    return listOf(
-        Violation("1110", "Overspeeding Two/Three Wheeler"),
-        Violation("1111", "Overspeeding LMV"),
-        Violation("1112", "Overspeeding HMV"),
-        Violation("1114", "Wrong Side Two / Three Wheeler"),
-        Violation("1114", "Wrong Side LMV"),
-        Violation("1114", "Wrong Side HMV"),
-        Violation("1114", "No Helmet")
-    )
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ViolationsScreen(onNavigateBack: () -> Unit) {
-    var violations by remember { mutableStateOf(mutableStateListOf<Violation>().apply { addAll(getDefaultViolations()) }) }
+    var violations by remember { mutableStateOf(ViolationRepository.violations) }
     var showDialog by remember { mutableStateOf(false) }
     var editingIndex by remember { mutableStateOf(-1) }
     var actId by remember { mutableStateOf("") }
@@ -119,7 +99,7 @@ fun ViolationsScreen(onNavigateBack: () -> Unit) {
                     fontWeight = FontWeight.Bold,
                     color = Color.White
                 )
-                
+
                 Button(
                     onClick = {
                         actId = ""
@@ -172,18 +152,18 @@ fun ViolationsScreen(onNavigateBack: () -> Unit) {
                 onSave = {
                     if (actId.isNotBlank() && actName.isNotBlank()) {
                         if (editingIndex >= 0) {
-                            // Edit existing violation
-                            violations[editingIndex] = Violation(actId, actName)
+                            ViolationRepository.updateViolation(editingIndex, Violation(actId, actName))
                         } else {
-                            // Add new violation
-                            violations.add(Violation(actId, actName))
+                            ViolationRepository.addViolation(Violation(actId, actName))
                         }
+                        violations = ViolationRepository.violations
                         showDialog = false
                     }
                 },
                 onDelete = {
                     if (editingIndex >= 0) {
-                        violations.removeAt(editingIndex)
+                        ViolationRepository.removeViolation(editingIndex)
+                        violations = ViolationRepository.violations
                         showDialog = false
                     }
                 },
@@ -236,9 +216,9 @@ fun ViolationItem(
                         fontWeight = FontWeight.Bold
                     )
                 }
-                
+
                 Spacer(modifier = Modifier.width(16.dp))
-                
+
                 // Violation details
                 Column {
                     Text(
@@ -249,7 +229,7 @@ fun ViolationItem(
                     )
                 }
             }
-            
+
             // Edit button
             IconButton(onClick = onEditClick) {
                 Icon(
@@ -305,7 +285,7 @@ fun ViolationDialog(
                     shape = RoundedCornerShape(8.dp),
                     singleLine = true
                 )
-                
+
                 OutlinedTextField(
                     value = actName,
                     onValueChange = onActNameChange,
@@ -340,7 +320,7 @@ fun ViolationDialog(
                         Text("Delete", color = Color.White)
                     }
                 }
-                
+
                 Button(
                     onClick = onSave,
                     colors = ButtonDefaults.buttonColors(

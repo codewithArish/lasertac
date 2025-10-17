@@ -51,6 +51,11 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.TextField
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -146,7 +151,7 @@ fun generateChallanPdf(context: Context, snapDetail: SnapDetail) {
     val detailPaints = listOf(
         valueBoldPaint, valueBoldPaint, valueBoldPaint, valueBoldPaint, valueBoldPaint, valueBoldPaint, valueBoldPaint, redValuePaint,
         if (snapDetail.regNrStatus == "Valid") valueBoldPaint else redValuePaint,
-        if (snapDetail.regNrStatus == "Valid") valueBoldPaint else redValuePaint, 
+        if (snapDetail.regNrStatus == "Valid") valueBoldPaint else redValuePaint,
         valueBoldPaint, valueBoldPaint, valueBoldPaint, valueBoldPaint, valueBoldPaint
     )
     layoutManager.drawGrid(details, paints = detailPaints, forceSinglePageCompact = true)
@@ -155,7 +160,7 @@ fun generateChallanPdf(context: Context, snapDetail: SnapDetail) {
     layoutManager.drawGrid(listOf("Violation Summary" to snapDetail.violationSummary), columns = 1, paints = listOf(redValuePaint), forceSinglePageCompact = true)
     layoutManager.drawGrid(listOf("Violation Management Link" to snapDetail.violationManagementLink), columns = 1, paints = listOf(linkPaint), forceSinglePageCompact = true)
     layoutManager.drawGrid(listOf("Access Link" to snapDetail.accessLink), columns = 1, paints = listOf(linkPaint), forceSinglePageCompact = true)
-    
+
     layoutManager.drawFooter(integraLogoBitmap)
 
     layoutManager.finish()
@@ -266,7 +271,12 @@ fun ImagePreviewScreen(
                             statusText = "Updating..."
                             actionStatus = ActionStatus.IN_PROGRESS
                             delay(800)
-                            onStatusChange(snapDetail.copy(status = SnapStatus.UPDATED))
+                            onStatusChange(
+                                snapDetail.copy(
+                                    status = SnapStatus.UPDATED,
+                                    uploadStatus = "Updated"
+                                )
+                            )
                             statusText = "Updated"
                             actionStatus = ActionStatus.SUCCESS
                         }
@@ -276,7 +286,12 @@ fun ImagePreviewScreen(
                             statusText = "Uploading..."
                             actionStatus = ActionStatus.IN_PROGRESS
                             delay(1200)
-                            onStatusChange(snapDetail.copy(status = SnapStatus.UPLOADED))
+                            onStatusChange(
+                                snapDetail.copy(
+                                    status = SnapStatus.UPLOADED,
+                                    uploadStatus = "Uploaded"
+                                )
+                            )
                             statusText = "Uploaded"
                             actionStatus = ActionStatus.SUCCESS
                         }
@@ -287,18 +302,39 @@ fun ImagePreviewScreen(
                             statusText = "Rejecting..."
                             actionStatus = ActionStatus.IN_PROGRESS
                             delay(800)
-                            onStatusChange(snapDetail.copy(status = SnapStatus.REJECTED))
+                            onStatusChange(
+                                snapDetail.copy(
+                                    status = SnapStatus.REJECTED,
+                                    uploadStatus = "Rejected"
+                                )
+                            )
                             statusText = "Rejected"
                             actionStatus = ActionStatus.SUCCESS
                         }
                     },
                     onPrintClick = { generateChallanPdf(context, snapDetail) },
-                    onShareClick = { shareSnapDetailsAsText(context, snapDetail) }
+                    onShareClick = {
+                        // Share details and mark as Shared/Updated in the UI state
+                        shareSnapDetailsAsText(context, snapDetail)
+                        onStatusChange(
+                            snapDetail.copy(
+                                status = if (snapDetail.status != SnapStatus.REJECTED) SnapStatus.UPDATED else snapDetail.status,
+                                uploadStatus = "Shared"
+                            )
+                        )
+                    }
                 )
 
                 MainImageSection(snapDetail, onPrev, onNext, isPrevEnabled, isNextEnabled)
                 ContextualImagesSection(snapDetail)
                 ExcelDetailsGrid(snapDetail)
+                ViolationSelector(
+                    currentSummary = snapDetail.violationSummary,
+                    enabled = snapDetail.status == SnapStatus.PENDING,
+                    onSelected = { selected ->
+                        onStatusChange(snapDetail.copy(violationSummary = selected))
+                    }
+                )
                 AdditionalDummyDetailsSection()
                 Spacer(modifier = Modifier.height(60.dp))
             }
@@ -459,7 +495,7 @@ private fun ExcelDetailsGrid(snapDetail: SnapDetail) {
                 InfoCell("Latitude", snapDetail.latitude, Modifier.weight(1f))
                 InfoCell("Longitude", snapDetail.longitude, Modifier.weight(1f))
             }
-            InfoCell("Violation", snapDetail.violationSummary, highlight = true)
+            HighlightedViolationCell(value = snapDetail.violationSummary)
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
             InfoCell("Location", snapDetail.location)
             InfoCell("Violation Distance", snapDetail.violationDistance)
@@ -502,6 +538,88 @@ private fun InfoCell(label: String, value: String, modifier: Modifier = Modifier
     Column(modifier = modifier.border(0.5.dp, Color.LightGray).padding(horizontal = 4.dp, vertical = 2.dp)) {
         Text(label, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha=0.7f))
         Text(value.ifEmpty { "N/A" }, fontSize = 12.sp, color = if(highlight) MaterialTheme.colorScheme.error else valueColor, fontWeight = if(highlight) FontWeight.Bold else FontWeight.Medium)
+    }
+}
+
+@Composable
+private fun HighlightedViolationCell(value: String) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, Color(0xFF7C4DFF), RoundedCornerShape(8.dp))
+            .background(Color(0x1A7C4DFF), RoundedCornerShape(8.dp))
+            .padding(horizontal = 8.dp, vertical = 6.dp)
+    ) {
+        Text("Violation", fontSize = 10.sp, color = Color(0xFF7C4DFF), fontWeight = FontWeight.Bold)
+        Text(
+            value.ifEmpty { "Select a violation" },
+            fontSize = 13.sp,
+            color = if (value.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ViolationSelector(
+    currentSummary: String,
+    enabled: Boolean,
+    onSelected: (String) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var fieldText by remember { mutableStateOf(currentSummary) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, Color(0xFF7C4DFF), RoundedCornerShape(12.dp))
+            .background(Color(0x1A7C4DFF), RoundedCornerShape(12.dp))
+            .padding(8.dp)
+    ) {
+        Text(
+            text = "Select Violation",
+            fontSize = 12.sp,
+            color = Color(0xFF7C4DFF),
+            fontWeight = FontWeight.Bold
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        ExposedDropdownMenuBox(
+            expanded = expanded && enabled,
+            onExpandedChange = { if (enabled) expanded = !expanded }
+        ) {
+            TextField(
+                value = fieldText,
+                onValueChange = {},
+                readOnly = true,
+                enabled = enabled,
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                modifier = Modifier
+                    .menuAnchor()
+                    .fillMaxWidth(),
+                colors = ExposedDropdownMenuDefaults.textFieldColors(
+                    focusedContainerColor = Color.White,
+                    unfocusedContainerColor = Color.White
+                ),
+                placeholder = { Text("Choose a violation") }
+            )
+            DropdownMenu(
+                expanded = expanded && enabled,
+                onDismissRequest = { expanded = false }
+            ) {
+                ViolationRepository.violations.forEach { violation ->
+                    val label = "${violation.actId} ${violation.actName}"
+                    DropdownMenuItem(
+                        text = { Text(label) },
+                        onClick = {
+                            fieldText = label
+                            expanded = false
+                            onSelected(label)
+                        }
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -614,7 +732,7 @@ private class PdfLayoutManager(private val document: PdfDocument, private val pa
 
     fun drawImageRow(bitmaps: List<Bitmap>, fixedHeight: Float, forceSinglePageCompact: Boolean = false) {
         if (bitmaps.isEmpty()) return
-        val scaledBitmaps = bitmaps.map { 
+        val scaledBitmaps = bitmaps.map {
             val aspectRatio = it.width.toFloat() / it.height.toFloat()
             Bitmap.createScaledBitmap(it, (fixedHeight * aspectRatio).toInt(), fixedHeight.toInt(), true)
         }
@@ -656,7 +774,7 @@ private class PdfLayoutManager(private val document: PdfDocument, private val pa
                     val labelLayout = StaticLayout.Builder.obtain(label, 0, label.length, labelPaint, (columnWidth - 2 * cellPadding).toInt()).build()
                     val valueLayout = StaticLayout.Builder.obtain(value, 0, value.length, valuePaint, (columnWidth - 2 * cellPadding).toInt()).build()
                     layoutsInRow.add(labelLayout to valueLayout)
-                    val cellHeight = labelLayout.height + valueLayout.height + 2 * cellPadding + labelValueSpacing 
+                    val cellHeight = labelLayout.height + valueLayout.height + 2 * cellPadding + labelValueSpacing
                     if (cellHeight > maxHeightInRow) {
                         maxHeightInRow = cellHeight
                     }
@@ -679,7 +797,7 @@ private class PdfLayoutManager(private val document: PdfDocument, private val pa
     }
 
     fun addSpacer(height: Float, forceSinglePageCompact: Boolean = false) {
-        val actualHeight = if (forceSinglePageCompact) height / 2f else height 
+        val actualHeight = if (forceSinglePageCompact) height / 2f else height
         checkNewPage(actualHeight, forceSinglePageCompact)
         yPos += actualHeight
     }
@@ -746,9 +864,7 @@ private fun ImagePreviewScreenPreview() {
         ImagePreviewScreen(
             snapDetail = dummySnap,
             onClose = {},
-            onPrev = {},
-            onNext = {},
-            isPrevEnabled = true,
+            onPrev = {}, onNext = {}, isPrevEnabled = true,
             isNextEnabled = true,
             onStatusChange = {}
         )

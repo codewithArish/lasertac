@@ -34,6 +34,43 @@ data class SnapDetail(
     val regNrStatus: String
 )
 
+// Central repository to share violations list across screens
+data class Violation(
+    val actId: String,
+    val actName: String
+)
+
+object ViolationRepository {
+    // Mutable shared state of violations; initialized with defaults
+    private val defaultViolations = listOf(
+        Violation("1110", "Overspeeding Two/Three Wheeler"),
+        Violation("1111", "Overspeeding LMV"),
+        Violation("1112", "Overspeeding HMV"),
+        Violation("1114", "Wrong Side Two / Three Wheeler"),
+        Violation("1114", "Wrong Side LMV"),
+        Violation("1114", "Wrong Side HMV"),
+        Violation("1115", "No Helmet")
+    )
+
+    private val _violations = androidx.compose.runtime.mutableStateListOf<Violation>().apply {
+        addAll(defaultViolations)
+    }
+
+    val violations: List<Violation> get() = _violations
+
+    fun addViolation(violation: Violation) {
+        _violations.add(violation)
+    }
+
+    fun updateViolation(index: Int, violation: Violation) {
+        if (index in _violations.indices) _violations[index] = violation
+    }
+
+    fun removeViolation(index: Int) {
+        if (index in _violations.indices) _violations.removeAt(index)
+    }
+}
+
 /**
  * Defines the status of a snap, each with an associated color for UI representation.
  */
