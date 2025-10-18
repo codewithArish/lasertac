@@ -1,11 +1,10 @@
 package com.lasertrac.app
 
 import android.os.Bundle
-// import android.util.Log // Removed unused import
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.compose.BackHandler // IMPORT BackHandler
+import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -30,7 +29,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -38,31 +36,30 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lasertrac.app.db.AppDatabase
-// import com.lasertrac.app.db.PoliceStationDao // Removed unused import
-import com.lasertrac.app.db.SnapLocationDao // Kept as snapLocationDao is used by LocationScreen
+import com.lasertrac.app.db.SnapLocationDao
 import com.lasertrac.app.ui.theme.Lasertac2Theme
-import com.lasertrac.app.ui.theme.TextColorLight
-import com.lasertrac.app.ui.theme.DashboardIconCircleBg
+import com.lasertrac.app.ui.theme.TextColorLight 
+import com.lasertrac.app.ui.theme.DashboardIconCircleBg 
 import kotlinx.coroutines.launch
 
-// Screen identifiers for state-based navigation
+// Updated Screen identifiers for navigation
 enum class Screen {
+    Login,
+    CreateAccount,
     Dashboard,
     Settings,
     Snaps,
     Videos,
     FTP,
-    DeviceId,
-    Location,
-    Violations,
-    Reports
-    // ImagePreview is NOT a top-level screen here, it's shown in a Dialog from SnapsScreen
+    DeviceId, 
+    Location, 
+    Violations, 
+    Reports 
 }
 
-// Updated to use DrawableRes for icons
 data class FeatureGridItemData(
     val title: String,
-    @DrawableRes val iconResId: Int,
+    @DrawableRes val iconResId: Int, 
     val iconBackgroundColor: Color,
     val onClick: () -> Unit
 )
@@ -77,55 +74,74 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             Lasertac2Theme {
-                var currentScreen by remember { mutableStateOf(Screen.Dashboard) }
-                val context = LocalContext.current // For potential finishActivity call
+                var currentScreen by remember { mutableStateOf(Screen.Login) }
+                var isLoggedIn by remember { mutableStateOf(false) }
 
-                BackHandler(enabled = true) {
-                    if (currentScreen != Screen.Dashboard) {
-                        currentScreen = Screen.Dashboard
-                    } else {
-                        (context as? ComponentActivity)?.finishAffinity() // Exits the app
+                // If not logged in, always show the auth screens
+                if (!isLoggedIn) {
+                    when (currentScreen) {
+                        Screen.Login -> LoginScreen(
+                            onLoginSuccess = { 
+                                isLoggedIn = true 
+                                currentScreen = Screen.Dashboard 
+                            },
+                            onNavigateToCreateAccount = { currentScreen = Screen.CreateAccount }
+                        )
+                        Screen.CreateAccount -> CreateAccountScreen(
+                            onAccountCreated = { currentScreen = Screen.Login },
+                            onNavigateBackToLogin = { currentScreen = Screen.Login }
+                        )
+                        // All other screens default to Login if not authenticated
+                        else -> {
+                             LoginScreen(
+                                onLoginSuccess = { 
+                                    isLoggedIn = true 
+                                    currentScreen = Screen.Dashboard 
+                                },
+                                onNavigateToCreateAccount = { currentScreen = Screen.CreateAccount }
+                            )
+                        }
                     }
-                }
-
-                when (currentScreen) {
-                    Screen.Dashboard -> MainDashboardScreen(
-                        onNavigateToSettings = { currentScreen = Screen.Settings },
-                        onNavigateToSnaps = { currentScreen = Screen.Snaps },
-                        onNavigateToVideos = { currentScreen = Screen.Videos },
-                        onNavigateToFTP = { currentScreen = Screen.FTP },
-                        onNavigateToDeviceId = { currentScreen = Screen.DeviceId },
-                        onNavigateToLocation = { currentScreen = Screen.Location },
-                        onNavigateToViolations = { currentScreen = Screen.Violations },
-                        onNavigateToReports = { currentScreen = Screen.Reports }
-                    )
-                    Screen.Settings -> SettingsScreen(
-                        onNavigateBack = { currentScreen = Screen.Dashboard }
-                    )
-                    Screen.Snaps -> SnapsScreen(
-                        onNavigateBack = { currentScreen = Screen.Dashboard },
-                        snapLocationDao = snapLocationDao // Added snapLocationDao back
-                    )
-                    Screen.Videos -> VideosScreen(
-                        onNavigateBack = { currentScreen = Screen.Dashboard }
-                    )
-                    Screen.FTP -> FTPScreen(
-                        onNavigateBack = { currentScreen = Screen.Dashboard }
-                    )
-                    Screen.DeviceId -> DeviceIdScreen(
-                        onNavigateBack = { currentScreen = Screen.Dashboard }
-                    )
-                    Screen.Location -> LocationScreen(
-                        onNavigateBack = { currentScreen = Screen.Dashboard },
-                        snapId = "current_device_location",
-                        snapLocationDao = snapLocationDao
-                    )
-                    Screen.Violations -> ViolationsScreen(
-                        onNavigateBack = { currentScreen = Screen.Dashboard }
-                    )
-                    Screen.Reports -> ReportsScreen(
-                        onNavigateBack = { currentScreen = Screen.Dashboard }
-                    )
+                } else { // User is logged in, show the main app content
+                    BackHandler(enabled = true) {
+                        if (currentScreen != Screen.Dashboard) {
+                            currentScreen = Screen.Dashboard
+                        } else {
+                            // On dashboard, pressing back will exit the app
+                            finishAffinity()
+                        }
+                    }
+                    
+                    when (currentScreen) {
+                        Screen.Dashboard -> MainDashboardScreen(
+                            onNavigateToSettings = { currentScreen = Screen.Settings },
+                            onNavigateToSnaps = { currentScreen = Screen.Snaps },
+                            onNavigateToVideos = { currentScreen = Screen.Videos },
+                            onNavigateToFTP = { currentScreen = Screen.FTP },
+                            onNavigateToDeviceId = { currentScreen = Screen.DeviceId },
+                            onNavigateToLocation = { currentScreen = Screen.Location },
+                            onNavigateToViolations = { currentScreen = Screen.Violations },
+                            onNavigateToReports = { currentScreen = Screen.Reports }
+                        )
+                        Screen.Settings -> SettingsScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
+                        Screen.Snaps -> SnapsScreen(onNavigateBack = { currentScreen = Screen.Dashboard }, snapLocationDao = snapLocationDao)
+                        Screen.Videos -> VideosScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
+                        Screen.FTP -> FTPScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
+                        Screen.DeviceId -> DeviceIdScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
+                        Screen.Location -> LocationScreen(onNavigateBack = { currentScreen = Screen.Dashboard }, snapId = "current_device_location", snapLocationDao = snapLocationDao)
+                        Screen.Violations -> ViolationsScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
+                        Screen.Reports -> ReportsScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
+                        else -> MainDashboardScreen(
+                            onNavigateToSettings = { currentScreen = Screen.Settings },
+                            onNavigateToSnaps = { currentScreen = Screen.Snaps },
+                            onNavigateToVideos = { currentScreen = Screen.Videos },
+                            onNavigateToFTP = { currentScreen = Screen.FTP },
+                            onNavigateToDeviceId = { currentScreen = Screen.DeviceId },
+                            onNavigateToLocation = { currentScreen = Screen.Location },
+                            onNavigateToViolations = { currentScreen = Screen.Violations },
+                            onNavigateToReports = { currentScreen = Screen.Reports }
+                        )
+                    }
                 }
             }
         }
@@ -157,16 +173,16 @@ fun MainDashboardScreen(
     )
 
     Scaffold(
-        containerColor = Color.Transparent,
+        containerColor = Color.Transparent, 
         topBar = {
-            TopAppBar(
+            TopAppBar( 
                 title = {
                     Text("Home", color = TextColorLight, fontWeight = FontWeight.Bold)
                 },
                 navigationIcon = {
                     Box(
                         modifier = Modifier
-                            .size(48.dp)
+                            .size(48.dp) 
                             .clip(CircleShape)
                             .background(DashboardIconCircleBg),
                         contentAlignment = Alignment.Center
@@ -177,7 +193,7 @@ fun MainDashboardScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent
+                    containerColor = Color.Transparent 
                 )
             )
         },
@@ -202,7 +218,7 @@ fun MainDashboardScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 16.dp),
+                        .padding(vertical = 16.dp), 
                     contentAlignment = Alignment.Center
                 ) {
                     Image(
@@ -211,7 +227,7 @@ fun MainDashboardScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(72.dp),
-                        contentScale = ContentScale.Crop
+                        contentScale = ContentScale.Crop 
                     )
                 }
 
@@ -260,12 +276,12 @@ fun FeatureGridButton(item: FeatureGridItemData) {
 
     Column(
         modifier = Modifier
-            .scale(scale.value)
+            .scale(scale.value) 
             .clickable {
                 scope.launch {
                      scale.animateTo(1.15f, animationSpec = tween(durationMillis = 100))
                     scale.animateTo(1f, animationSpec = tween(durationMillis = 100))
-                    item.onClick()
+                    item.onClick() 
                 }
             }
             .padding(8.dp),
@@ -276,7 +292,7 @@ fun FeatureGridButton(item: FeatureGridItemData) {
             modifier = Modifier
                 .size(68.dp)
                 .background(
-                    color = item.iconBackgroundColor,
+                    color = item.iconBackgroundColor, 
                     shape = CircleShape
                 )
                 .border(

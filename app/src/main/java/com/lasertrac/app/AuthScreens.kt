@@ -15,11 +15,13 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.google.gson.Gson
 import com.lasertrac.app.network.AuthResponse
 import com.lasertrac.app.network.LoginRequest
 import com.lasertrac.app.network.RegisterRequest
 import com.lasertrac.app.network.RetrofitInstance
 import kotlinx.coroutines.launch
+import retrofit2.HttpException
 
 @Composable
 fun LoginScreen(onLoginSuccess: () -> Unit, onNavigateToCreateAccount: () -> Unit) {
@@ -29,6 +31,8 @@ fun LoginScreen(onLoginSuccess: () -> Unit, onNavigateToCreateAccount: () -> Uni
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+
+    val isFormValid by remember { derivedStateOf { email.isNotBlank() && password.isNotBlank() } }
 
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -45,7 +49,8 @@ fun LoginScreen(onLoginSuccess: () -> Unit, onNavigateToCreateAccount: () -> Uni
                 label = { Text("Email") },
                 modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                singleLine = true
+                singleLine = true,
+                isError = errorMessage != null
             )
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -62,7 +67,8 @@ fun LoginScreen(onLoginSuccess: () -> Unit, onNavigateToCreateAccount: () -> Uni
                     IconButton(onClick = { passwordVisible = !passwordVisible }) {
                         Icon(imageVector = image, contentDescription = if (passwordVisible) "Hide password" else "Show password")
                     }
-                }
+                },
+                isError = errorMessage != null
             )
             Spacer(modifier = Modifier.height(24.dp))
 
@@ -76,27 +82,36 @@ fun LoginScreen(onLoginSuccess: () -> Unit, onNavigateToCreateAccount: () -> Uni
                         scope.launch {
                             try {
                                 val response = RetrofitInstance.api.login(LoginRequest(email, password))
-                                if (response.isSuccessful && response.body()?.status == "success") {
-                                    Log.d("Login", "Login successful: ${response.body()?.user}")
-                                    onLoginSuccess()
+                                if (response.isSuccessful) {
+                                    val authResponse = response.body()
+                                    if (authResponse?.status == "success") {
+                                        Log.d("Login", "Login successful: ${authResponse.user}")
+                                        onLoginSuccess()
+                                    } else {
+                                        errorMessage = authResponse?.message ?: "Login failed with unknown server error."
+                                    }
                                 } else {
-                                    errorMessage = response.body()?.message ?: "An unknown error occurred."
-                                    isLoading = false
+                                    val errorBody = response.errorBody()?.string()
+                                    val errorResponse = try { Gson().fromJson(errorBody, AuthResponse::class.java) } catch (e: Exception) { null }
+                                    errorMessage = errorResponse?.message ?: "An unexpected error occurred."
+                                    Log.e("Login", "API Error: $errorBody")
                                 }
                             } catch (e: Exception) {
                                 errorMessage = "Could not connect to server: ${e.message}"
+                                Log.e("Login", "Network/Conversion Error", e)
+                            } finally {
                                 isLoading = false
-                                Log.e("Login", "Login failed", e)
                             }
                         }
                     },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = isFormValid && !isLoading
                 ) {
                     Text("Login")
                 }
             }
 
-            TextButton(onClick = onNavigateToCreateAccount) {
+            TextButton(onClick = { if (!isLoading) onNavigateToCreateAccount() }) {
                 Text("Don't have an account? Create one")
             }
 
@@ -118,6 +133,8 @@ fun CreateAccountScreen(onAccountCreated: () -> Unit, onNavigateBackToLogin: () 
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
+    val isFormValid by remember { derivedStateOf { name.isNotBlank() && email.isNotBlank() && password.length >= 6 } }
+
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier.fillMaxSize().padding(32.dp),
@@ -132,7 +149,7 @@ fun CreateAccountScreen(onAccountCreated: () -> Unit, onNavigateBackToLogin: () 
             OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("Email") }, modifier = Modifier.fillMaxWidth(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), singleLine = true)
             Spacer(modifier = Modifier.height(16.dp))
             OutlinedTextField(
-                value = password, onValueChange = { password = it }, label = { Text("Password") }, modifier = Modifier.fillMaxWidth(),
+                value = password, onValueChange = { password = it }, label = { Text("Password (min 6 chars)") }, modifier = Modifier.fillMaxWidth(),
                 singleLine = true, visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 trailingIcon = {
@@ -140,7 +157,8 @@ fun CreateAccountScreen(onAccountCreated: () -> Unit, onNavigateBackToLogin: () 
                     IconButton(onClick = { passwordVisible = !passwordVisible }) {
                         Icon(imageVector = image, contentDescription = if (passwordVisible) "Hide password" else "Show password")
                     }
-                }
+                },
+                isError = errorMessage != null
             )
             Spacer(modifier = Modifier.height(24.dp))
 
@@ -152,28 +170,37 @@ fun CreateAccountScreen(onAccountCreated: () -> Unit, onNavigateBackToLogin: () 
                         isLoading = true
                         errorMessage = null
                         scope.launch {
-                            try {
+                             try {
                                 val response = RetrofitInstance.api.register(RegisterRequest(email, password, name))
-                                if (response.isSuccessful && response.body()?.status == "success") {
-                                    Log.d("Register", "Registration successful for: $email")
-                                    onAccountCreated()
+                                if (response.isSuccessful) {
+                                    val authResponse = response.body()
+                                     if (authResponse?.status == "success") {
+                                        Log.d("Register", "Registration successful for: $email")
+                                        onAccountCreated()
+                                    } else {
+                                        errorMessage = authResponse?.message ?: "Registration failed with unknown server error."
+                                    }
                                 } else {
-                                    errorMessage = response.body()?.message ?: "An unknown error occurred."
-                                    isLoading = false
+                                    val errorBody = response.errorBody()?.string()
+                                    val errorResponse = try { Gson().fromJson(errorBody, AuthResponse::class.java) } catch (ex: Exception) { null }
+                                    errorMessage = errorResponse?.message ?: "An unexpected error occurred."
+                                    Log.e("Register", "API Error: $errorBody")
                                 }
                             } catch (e: Exception) {
                                 errorMessage = "Could not connect to server: ${e.message}"
+                                Log.e("Register", "Network/Conversion Error", e)
+                            } finally {
                                 isLoading = false
-                                Log.e("Register", "Registration failed", e)
                             }
                         }
                     },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = isFormValid && !isLoading
                 ) {
                     Text("Create Account")
                 }
             }
-            TextButton(onClick = onNavigateBackToLogin) {
+            TextButton(onClick = { if(!isLoading) onNavigateBackToLogin() }) {
                 Text("Already have an account? Login")
             }
             errorMessage?.let {

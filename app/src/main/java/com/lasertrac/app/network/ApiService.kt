@@ -11,21 +11,21 @@ import retrofit2.http.POST
 interface ApiService {
 
     /**
-     * Example GET request. Replace 'example/endpoint' with your actual endpoint.
+     * Example GET request. Kept for demonstration.
      */
     @GET("example/endpoint")
-    suspend fun getSampleData(): Response<SampleApiResponse> // Assuming SampleApiResponse is still needed
+    suspend fun getSampleData(): Response<SampleApiResponse>
 
     /**
      * Performs a login request.
-     * TODO: Replace "login" with your actual login endpoint path.
+     * This now returns a Response object to allow for explicit error handling.
      */
     @POST("login")
     suspend fun login(@Body request: LoginRequest): Response<AuthResponse>
 
     /**
      * Performs a user registration request.
-     * TODO: Replace "register" with your actual registration endpoint path.
+     * This now returns a Response object.
      */
     @POST("register")
     suspend fun register(@Body request: RegisterRequest): Response<AuthResponse>
