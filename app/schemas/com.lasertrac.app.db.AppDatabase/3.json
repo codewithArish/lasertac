@@ -1,0 +1,170 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 3,
+    "identityHash": "480231e3d608f070777c62be67ce8c06",
+    "entities": [
+      {
+        "tableName": "police_stations",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `city` TEXT NOT NULL, `area_location` TEXT NOT NULL, `police_station` TEXT NOT NULL, `contact` TEXT, `source` TEXT)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "city",
+            "columnName": "city",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "areaLocation",
+            "columnName": "area_location",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "policeStationName",
+            "columnName": "police_station",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "contact",
+            "columnName": "contact",
+            "affinity": "TEXT",
+            "notNull": false
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "saved_snap_location",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`snapId` TEXT NOT NULL, `latitude` REAL NOT NULL, `longitude` REAL NOT NULL, `fullAddress` TEXT NOT NULL, `district` TEXT NOT NULL, `country` TEXT NOT NULL, `selectedCity` TEXT NOT NULL, `selectedState` TEXT NOT NULL, `selectedPoliceArea` TEXT NOT NULL, `imageUri` TEXT, PRIMARY KEY(`snapId`))",
+        "fields": [
+          {
+            "fieldPath": "snapId",
+            "columnName": "snapId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "latitude",
+            "columnName": "latitude",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "longitude",
+            "columnName": "longitude",
+            "affinity": "REAL",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fullAddress",
+            "columnName": "fullAddress",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "district",
+            "columnName": "district",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "country",
+            "columnName": "country",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "selectedCity",
+            "columnName": "selectedCity",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "selectedState",
+            "columnName": "selectedState",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "selectedPoliceArea",
+            "columnName": "selectedPoliceArea",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "imageUri",
+            "columnName": "imageUri",
+            "affinity": "TEXT",
+            "notNull": false
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "snapId"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      },
+      {
+        "tableName": "violations",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `actId` TEXT NOT NULL, `actName` TEXT NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "actId",
+            "columnName": "actId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "actName",
+            "columnName": "actName",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [],
+        "foreignKeys": []
+      }
+    ],
+    "views": [],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '480231e3d608f070777c62be67ce8c06')"
+    ]
+  }
+}

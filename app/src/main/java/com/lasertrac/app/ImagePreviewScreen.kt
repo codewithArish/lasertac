@@ -87,6 +87,7 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.lasertrac.app.db.AppDatabase
 
 enum class ActionStatus { IDLE, IN_PROGRESS, SUCCESS, FAILURE }
 
@@ -497,7 +498,14 @@ private fun ExcelDetailsGrid(snapDetail: SnapDetail) {
             }
             HighlightedViolationCell(value = snapDetail.violationSummary)
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-            InfoCell("Location", resolveDisplayLocation(snapDetail))
+            DynamicLocationCell(
+                snapId = snapDetail.id,
+                label = "Location",
+                fallbackLocation = snapDetail.location,
+                fallbackLatitude = snapDetail.latitude,
+                fallbackLongitude = snapDetail.longitude,
+                fallbackAddress = snapDetail.address
+            )
             InfoCell("Violation Distance", snapDetail.violationDistance)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 InfoCell("Registration Status", snapDetail.regNrStatus, Modifier.weight(1f))
@@ -607,7 +615,13 @@ private fun ViolationSelector(
                 expanded = expanded && enabled,
                 onDismissRequest = { expanded = false }
             ) {
-                ViolationRepository.violations.forEach { violation ->
+                val context = LocalContext.current
+                val dao = remember { AppDatabase.getDatabase(context).violationDao() }
+                var violations by remember { mutableStateOf<List<com.lasertrac.app.db.ViolationEntity>>(emptyList()) }
+                LaunchedEffect(Unit) {
+                    dao.getAllViolations().collect { violations = it }
+                }
+                violations.forEach { violation ->
                     val label = "${violation.actId} ${violation.actName}"
                     DropdownMenuItem(
                         text = { Text(label) },
@@ -623,14 +637,39 @@ private fun ViolationSelector(
     }
 }
 
-// Prefer address if present, else lat/lon, else fallback to provided location string
-private fun resolveDisplayLocation(snapDetail: SnapDetail): String {
-    val address = snapDetail.address.ifBlank { "" }
-    if (address.isNotEmpty() && address != "N/A") return address
-    val lat = snapDetail.latitude.ifBlank { "" }
-    val lon = snapDetail.longitude.ifBlank { "" }
-    if (lat.isNotEmpty() && lon.isNotEmpty() && lat != "N/A" && lon != "N/A") return "$lat, $lon"
-    return snapDetail.location
+@Composable
+private fun DynamicLocationCell(
+    snapId: String,
+    label: String,
+    fallbackLocation: String,
+    fallbackLatitude: String,
+    fallbackLongitude: String,
+    fallbackAddress: String
+) {
+    val context = LocalContext.current
+    val dao = remember { AppDatabase.getDatabase(context).snapLocationDao() }
+    var address by remember { mutableStateOf(fallbackAddress) }
+    var latitude by remember { mutableStateOf(fallbackLatitude) }
+    var longitude by remember { mutableStateOf(fallbackLongitude) }
+
+    LaunchedEffect(snapId) {
+        dao.getSnapLocationById(snapId).collect { entity ->
+            entity?.let {
+                // Prefer values from DB when present
+                if (!it.fullAddress.isNullOrBlank()) address = it.fullAddress
+                if (it.latitude != 0.0) latitude = it.latitude.toString()
+                if (it.longitude != 0.0) longitude = it.longitude.toString()
+            }
+        }
+    }
+
+    val display = when {
+        address.isNotBlank() && address != "N/A" -> address
+        latitude.isNotBlank() && longitude.isNotBlank() && latitude != "N/A" && longitude != "N/A" -> "$latitude, $longitude"
+        else -> fallbackLocation
+    }
+
+    InfoCell(label, display)
 }
 
 @Composable

@@ -51,11 +51,23 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lasertrac.app.ui.theme.TextColorLight
 import com.lasertrac.app.ui.theme.TopBarColor
+import com.lasertrac.app.db.AppDatabase
+import com.lasertrac.app.db.ViolationDao
+import com.lasertrac.app.db.ViolationEntity
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ViolationsScreen(onNavigateBack: () -> Unit) {
-    var violations by remember { mutableStateOf(ViolationRepository.violations) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val dao: ViolationDao = remember { AppDatabase.getDatabase(context).violationDao() }
+    val scope = rememberCoroutineScope()
+    var violations by remember { mutableStateOf<List<ViolationEntity>>(emptyList()) }
+    LaunchedEffect(Unit) {
+        dao.getAllViolations().collect { violations = it }
+    }
     var showDialog by remember { mutableStateOf(false) }
     var editingIndex by remember { mutableStateOf(-1) }
     var actId by remember { mutableStateOf("") }
@@ -152,18 +164,18 @@ fun ViolationsScreen(onNavigateBack: () -> Unit) {
                 onSave = {
                     if (actId.isNotBlank() && actName.isNotBlank()) {
                         if (editingIndex >= 0) {
-                            ViolationRepository.updateViolation(editingIndex, Violation(actId, actName))
+                            val entity = violations[editingIndex].copy(actId = actId, actName = actName)
+                            scope.launch { dao.updateViolation(entity) }
                         } else {
-                            ViolationRepository.addViolation(Violation(actId, actName))
+                            scope.launch { dao.insertViolation(ViolationEntity(actId = actId, actName = actName)) }
                         }
-                        violations = ViolationRepository.violations
                         showDialog = false
                     }
                 },
                 onDelete = {
                     if (editingIndex >= 0) {
-                        ViolationRepository.removeViolation(editingIndex)
-                        violations = ViolationRepository.violations
+                        val entity = violations[editingIndex]
+                        scope.launch { dao.deleteViolation(entity) }
                         showDialog = false
                     }
                 },
@@ -175,7 +187,7 @@ fun ViolationsScreen(onNavigateBack: () -> Unit) {
 
 @Composable
 fun ViolationItem(
-    violation: Violation,
+    violation: ViolationEntity,
     index: Int,
     onEditClick: () -> Unit
 ) {

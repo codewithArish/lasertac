@@ -22,6 +22,7 @@ import com.lasertrac.app.network.RegisterRequest
 import com.lasertrac.app.network.RetrofitInstance
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
+import java.io.IOException
 
 @Composable
 fun LoginScreen(onLoginSuccess: () -> Unit, onNavigateToCreateAccount: () -> Unit) {
@@ -96,8 +97,14 @@ fun LoginScreen(onLoginSuccess: () -> Unit, onNavigateToCreateAccount: () -> Uni
                                     errorMessage = errorResponse?.message ?: "An unexpected error occurred."
                                     Log.e("Login", "API Error: $errorBody")
                                 }
+                            } catch (e: HttpException) {
+                                errorMessage = "An unexpected HTTP error: ${e.message()}"
+                                Log.e("Login", "HttpException", e)
+                            } catch (e: IOException) {
+                                errorMessage = "Network error. Please check your connection."
+                                Log.e("Login", "IOException", e)
                             } catch (e: Exception) {
-                                errorMessage = "Could not connect to server: ${e.message}"
+                                errorMessage = "An unexpected error occurred: ${e.message}"
                                 Log.e("Login", "Network/Conversion Error", e)
                             } finally {
                                 isLoading = false
@@ -186,8 +193,14 @@ fun CreateAccountScreen(onAccountCreated: () -> Unit, onNavigateBackToLogin: () 
                                     errorMessage = errorResponse?.message ?: "An unexpected error occurred."
                                     Log.e("Register", "API Error: $errorBody")
                                 }
+                            } catch (e: HttpException) {
+                                errorMessage = "An unexpected HTTP error: ${e.message()}"
+                                Log.e("Register", "HttpException", e)
+                            } catch (e: IOException) {
+                                errorMessage = "Network error. Please check your connection."
+                                Log.e("Register", "IOException", e)
                             } catch (e: Exception) {
-                                errorMessage = "Could not connect to server: ${e.message}"
+                                errorMessage = "An unexpected error occurred: ${e.message}"
                                 Log.e("Register", "Network/Conversion Error", e)
                             } finally {
                                 isLoading = false
