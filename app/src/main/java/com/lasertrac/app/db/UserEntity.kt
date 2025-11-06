@@ -3,9 +3,7 @@ package com.lasertrac.app.db
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
-/**
- * Represents a user in the local Room database.
- */
+
 @Entity(tableName = "users")
 data class UserEntity(
     @PrimaryKey(autoGenerate = true)
@@ -16,3 +14,4 @@ data class UserEntity(
     // For a real application, this should be a securely hashed password.
     val passwordHash: String 
 )
+
