@@ -2,10 +2,6 @@ package com.lasertrac.app
 
 import androidx.compose.ui.graphics.Color
 
-/**
- * Represents the detailed information for a single snap.
- * Image fields can hold either a Uri from the camera/gallery or a drawable resource ID for previews.
- */
 data class SnapDetail(
     val id: String,
     val regNr: String,
@@ -34,14 +30,12 @@ data class SnapDetail(
     val regNrStatus: String
 )
 
-// Central repository to share violations list across screens
 data class Violation(
     val actId: String,
     val actName: String
 )
 
 object ViolationRepository {
-    // Mutable shared state of violations; initialized with defaults
     private val defaultViolations = listOf(
         Violation("1110", "Overspeeding Two/Three Wheeler"),
         Violation("1111", "Overspeeding LMV"),
@@ -71,12 +65,9 @@ object ViolationRepository {
     }
 }
 
-/**
- * Defines the status of a snap, each with an associated color for UI representation.
- */
-enum class SnapStatus(val color: Color) {
-    PENDING(Color(0xFFFFA500)), // Orange
-    UPDATED(Color(0xFF4CAF50)), // Green
-    UPLOADED(Color(0xFF2196F3)), // Blue
-    REJECTED(Color(0xFFF44336))  // Red
+enum class SnapStatus(val displayName: String, val color: Color) {
+    PENDING("Pending", Color(0xFFFFA726)),
+    UPLOADED("Uploaded", Color(0xFF66BB6A)),
+    REJECTED("Rejected", Color(0xFFEF5350)),
+    UPDATED("Updated", Color(0xFF42A5F5))
 }

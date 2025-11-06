@@ -37,7 +37,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-//import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -314,7 +313,6 @@ fun ImagePreviewScreen(
                     },
                     onPrintClick = { generateChallanPdf(context, snapDetail) },
                     onShareClick = {
-                        // Share details and mark as Shared/Updated in the UI state
                         shareSnapDetailsAsText(context, snapDetail)
                         onStatusChange(
                             snapDetail.copy(
@@ -661,7 +659,6 @@ private class PdfLayoutManager(private val document: PdfDocument, private val pa
 
     private fun checkNewPage(requiredHeight: Float, forceSinglePage: Boolean = false) {
         if (forceSinglePage && yPos + requiredHeight > pageEffectiveHeight) {
-            // Content overflows, do nothing for now
         }
     }
 

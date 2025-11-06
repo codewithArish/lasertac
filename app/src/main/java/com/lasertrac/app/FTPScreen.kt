@@ -44,7 +44,6 @@ fun FTPScreen(onNavigateBack: () -> Unit) {
 
     var passwordVisible by remember { mutableStateOf(false) }
 
-    // Validation flags
     var showFtpAlert by remember { mutableStateOf(false) }
     var showDeptAlert by remember { mutableStateOf(false) }
 
@@ -82,7 +81,6 @@ fun FTPScreen(onNavigateBack: () -> Unit) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Device IP Section
             Text(
                 text = "Device Ip",
                 fontSize = 14.sp,
@@ -90,7 +88,6 @@ fun FTPScreen(onNavigateBack: () -> Unit) {
                 modifier = Modifier.padding(top = 8.dp)
             )
 
-            // FTP Configuration Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -160,7 +157,6 @@ fun FTPScreen(onNavigateBack: () -> Unit) {
                 )
             }
 
-            // Department Name Section
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -227,7 +223,6 @@ fun FTPScreen(onNavigateBack: () -> Unit) {
                 }
             }
 
-            // ---------------- Department Logo Section ----------------
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),

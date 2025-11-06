@@ -44,7 +44,6 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import java.util.Locale
 
-// --- Updated Data structures for cascading dropdowns ---
 data class District(val name: String, val primaryZip: String)
 data class City(val name: String, val districts: List<District>)
 data class StateData(val name: String, val cities: List<City>)
@@ -76,15 +75,14 @@ val allPoliceStationsSource = listOf(
     "Connaught Place PS", "Karol Bagh PS", "Saket PS", "Hauz Khas PS",
     "Colaba PS", "Bandra PS", "Shivaji Nagar PS", "Hinjewadi PS"
 )
-// --- End of data structures ---
 
 data class CurrentLocationDetails(
     val latitude: Double = 0.0,
     val longitude: Double = 0.0,
     val addressLine: String = "N/A",
-    val city: String = "N/A",        // From Address.locality
-    val district: String = "N/A",    // From Address.subLocality or subAdminArea
-    val state: String = "N/A",       // From Address.adminArea
+    val city: String = "N/A",
+    val district: String = "N/A",
+    val state: String = "N/A",
     val country: String = "N/A",
     val postalCode: String = "N/A"
 )
@@ -113,7 +111,6 @@ fun LocationScreen(
     var citiesInSelectedState by remember { mutableStateOf<List<City>>(emptyList()) }
     var districtsInSelectedCity by remember { mutableStateOf<List<District>>(emptyList()) }
 
-    // State to hold the existing entity to prevent data loss on update
     var existingSnapEntity by remember { mutableStateOf<SavedSnapLocationEntity?>(null) }
 
     val coroutineScope = rememberCoroutineScope()
@@ -121,10 +118,24 @@ fun LocationScreen(
     val geocoder = remember { Geocoder(context, Locale.getDefault()) }
     val isPreview = LocalContext.current.javaClass.simpleName.contains("Preview")
 
-    // Load existing entity to preserve fields like imageUri on save
     LaunchedEffect(snapId) {
         if (!isPreview) {
-            existingSnapEntity = snapLocationDao.getSnapLocationById(snapId).firstOrNull()
+            coroutineScope.launch {
+                val entity = snapLocationDao.getSnapLocationById(snapId).firstOrNull()
+                existingSnapEntity = entity
+                entity?.let {
+                    manualState = it.selectedState ?: ""
+                    manualCity = it.selectedCity ?: ""
+                    manualDistrict = it.district ?: ""
+                    manualPoliceStation = it.selectedPoliceArea ?: ""
+                    if (manualState.isNotEmpty()) {
+                        citiesInSelectedState = stateCityDistrictDataSource.firstOrNull { s -> s.name == manualState }?.cities ?: emptyList()
+                        if (manualCity.isNotEmpty()) {
+                            districtsInSelectedCity = citiesInSelectedState.firstOrNull { c -> c.name == manualCity }?.districts ?: emptyList()
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -251,7 +262,7 @@ fun LocationScreen(
                     Spacer(modifier = Modifier.height(16.dp))
 
                     Button(
-                        onClick = { // Update GPS Location
+                        onClick = { 
                             if (isPreview) {
                                 isLoading = true; saveMessage = null
                                 coroutineScope.launch {
@@ -274,7 +285,7 @@ fun LocationScreen(
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Button(
-                        onClick = { // Save GPS Location
+                        onClick = { 
                             locationDetails?.let { currentDetails ->
                                 coroutineScope.launch {
                                     val entityToSave = existingSnapEntity?.copy(
@@ -285,10 +296,21 @@ fun LocationScreen(
                                         country = currentDetails.country,
                                         selectedCity = currentDetails.city,
                                         selectedState = currentDetails.state
-                                    ) ?: return@launch // Should not happen if snapId is valid
+                                    ) ?: SavedSnapLocationEntity(
+                                        snapId = snapId, 
+                                        timestamp = System.currentTimeMillis(),
+                                        latitude = currentDetails.latitude,
+                                        longitude = currentDetails.longitude,
+                                        fullAddress = currentDetails.addressLine,
+                                        district = currentDetails.district,
+                                        country = currentDetails.country,
+                                        selectedCity = currentDetails.city,
+                                        selectedState = currentDetails.state
+                                    )
 
                                     snapLocationDao.insertOrUpdateSnapLocation(entityToSave)
-                                    saveMessage = "GPS Location Saved! (City: ${entityToSave.selectedCity}, Dist: ${entityToSave.district})"
+                                    existingSnapEntity = entityToSave 
+                                    saveMessage = "GPS Location Saved!"
                                 }
                             }
                         },
@@ -327,21 +349,34 @@ fun LocationScreen(
                         onManualZipCodeChange = { manualZipCode = it },
                         onSaveManualLocation = {
                             coroutineScope.launch {
+                                val addressString = listOf(manualDistrict, manualCity, manualState, manualZipCode).filter { it.isNotBlank() }.joinToString(", ")
+
                                 val entityToSave = existingSnapEntity?.copy(
-                                    fullAddress = "$manualDistrict, $manualCity, $manualState $manualZipCode".trim().replaceFirst("^N/A, ", "").replaceFirst(", N/A", ""),
-                                    selectedState = manualState.ifBlank { locationDetails?.state ?: "N/A" },
-                                    selectedCity = manualCity.ifBlank { locationDetails?.city ?: "N/A" },
-                                    district = manualDistrict.ifBlank { locationDetails?.district ?: "N/A" },
-                                    selectedPoliceArea = manualPoliceStation.ifBlank { "N/A" }
-                                ) ?: return@launch // Should not happen if snapId is valid
+                                    fullAddress = addressString,
+                                    selectedState = manualState.ifBlank { null },
+                                    selectedCity = manualCity.ifBlank { null },
+                                    district = manualDistrict.ifBlank { null },
+                                    selectedPoliceArea = manualPoliceStation.ifBlank { null }
+                                ) ?: SavedSnapLocationEntity(
+                                    snapId = snapId, 
+                                    timestamp = System.currentTimeMillis(),
+                                    fullAddress = addressString,
+                                    selectedState = manualState.ifBlank { null },
+                                    selectedCity = manualCity.ifBlank { null },
+                                    district = manualDistrict.ifBlank { null },
+                                    selectedPoliceArea = manualPoliceStation.ifBlank { null }
+                                )
 
                                 snapLocationDao.insertOrUpdateSnapLocation(entityToSave)
+                                existingSnapEntity = entityToSave 
                                 saveMessage = "Manual Location Saved!"
-                                Log.d("LocationScreen", "Manual location saved for $snapId as $entityToSave")
 
                                 locationDetails = locationDetails?.copy(
-                                    addressLine = entityToSave.fullAddress, city = entityToSave.selectedCity, state = entityToSave.selectedState,
-                                    postalCode = manualZipCode, district = entityToSave.district
+                                    addressLine = entityToSave.fullAddress ?: "N/A",
+                                    city = entityToSave.selectedCity ?: "N/A",
+                                    state = entityToSave.selectedState ?: "N/A",
+                                    postalCode = manualZipCode,
+                                    district = entityToSave.district ?: "N/A"
                                 )
                             }
                         }
@@ -452,8 +487,7 @@ private fun fetchDeviceLocation(context: Context, client: FusedLocationProviderC
                     @Suppress("DEPRECATION") val addresses = geocoder.getFromLocation(location.latitude, location.longitude, 1)
                     addresses?.firstOrNull()?.let { callback(Result.success(mapAndroidAddressToDetails(it, location.latitude, location.longitude))) } ?: callback(Result.success(CurrentLocationDetails(latitude = location.latitude, longitude = location.longitude, addressLine = "-")))
                 }
-            } catch (e: Exception) { callback(Result.failure(Exception("Could not determine address: ${e.message}"))) }
-        }
+            } catch (e: Exception) { callback(Result.failure(Exception("Could not determine address: ${e.message}"))) } }
         .addOnFailureListener { e -> callback(Result.failure(Exception("Could not fetch location: ${e.message}"))) }
 }
 
@@ -518,11 +552,14 @@ private fun LocationDetailRow(label: String, value: String) {
 
 class LocationScreenMockDao : SnapLocationDao {
     private val mockStorage = mutableMapOf<String, SavedSnapLocationEntity>()
-    override suspend fun insertOrUpdateSnapLocation(snapLocation: SavedSnapLocationEntity) { mockStorage[snapLocation.snapId] = snapLocation }
+    override suspend fun insertOrUpdateSnapLocation(snapLocation: SavedSnapLocationEntity) { 
+        val idToUse = if (snapLocation.id != 0) snapLocation.id else (mockStorage.keys.size + 1)
+        mockStorage[snapLocation.snapId] = snapLocation.copy(id = idToUse)
+    }
     override fun getSnapLocationById(snapId: String): Flow<SavedSnapLocationEntity?> = flowOf(mockStorage[snapId])
     override fun getAllSnapLocations(): Flow<List<SavedSnapLocationEntity>> = flowOf(mockStorage.values.toList())
     override suspend fun deleteSnapsByIds(snapIds: List<String>) {
-        snapIds.forEach { mockStorage.remove(it) }
+        snapIds.forEach { mockId -> mockStorage.values.removeIf { it.snapId == mockId } }
     }
 }
 

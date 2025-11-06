@@ -1,7 +1,7 @@
 package com.lasertrac.app.network.models
 
 data class AuthResponse(
-    val success: Boolean,
+    val status: String,
     val message: String,
     val user: UserResponse?
 )

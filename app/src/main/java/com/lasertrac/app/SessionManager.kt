@@ -2,51 +2,62 @@ package com.lasertrac.app
 
 import android.content.Context
 import android.content.SharedPreferences
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
+import java.util.Calendar
 
 class SessionManager(context: Context) {
 
-    private val masterKey = MasterKey.Builder(context)
-        .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-        .build()
-
-    private val encryptedPrefs: SharedPreferences = EncryptedSharedPreferences.create(
-        context,
-        "encrypted_user_prefs",
-        masterKey,
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-    )
-
-    private val sessionPrefs: SharedPreferences = context.getSharedPreferences("session_prefs", Context.MODE_PRIVATE)
+    private val prefs: SharedPreferences = context.getSharedPreferences("user_prefs", Context.MODE_PRIVATE)
 
     fun saveCredentials(email: String, pass: String) {
-        with(encryptedPrefs.edit()) {
+        with(prefs.edit()) {
             putString("EMAIL", email)
             putString("PASSWORD", pass)
             apply()
         }
     }
 
-    fun getSavedEmail(): String? = encryptedPrefs.getString("EMAIL", null)
+    fun getSavedEmail(): String? = prefs.getString("EMAIL", null)
 
-    fun getSavedPassword(): String? = encryptedPrefs.getString("PASSWORD", null)
+    fun getSavedPassword(): String? = prefs.getString("PASSWORD", null)
 
     fun clearCredentials() {
-        with(encryptedPrefs.edit()) {
+        with(prefs.edit()) {
             remove("EMAIL")
             remove("PASSWORD")
             apply()
         }
     }
 
-    fun setLoggedIn(isLoggedIn: Boolean) {
-        with(sessionPrefs.edit()) {
-            putBoolean("IS_LOGGED_IN", isLoggedIn)
+    fun setLoggedIn() {
+        with(prefs.edit()) {
+            putBoolean("IS_LOGGED_IN", true)
+            putLong("LOGIN_TIMESTAMP", System.currentTimeMillis())
             apply()
         }
     }
 
-    fun isLoggedIn(): Boolean = sessionPrefs.getBoolean("IS_LOGGED_IN", false)
+    fun isSessionValid(): Boolean {
+        if (!prefs.getBoolean("IS_LOGGED_IN", false)) {
+            return false
+        }
+
+        val loginTimestamp = prefs.getLong("LOGIN_TIMESTAMP", 0)
+        if (loginTimestamp == 0L) {
+            return false
+        }
+
+        val loginCal = Calendar.getInstance().apply { timeInMillis = loginTimestamp }
+        val currentCal = Calendar.getInstance()
+
+        return loginCal.get(Calendar.YEAR) == currentCal.get(Calendar.YEAR) &&
+               loginCal.get(Calendar.DAY_OF_YEAR) == currentCal.get(Calendar.DAY_OF_YEAR)
+    }
+
+    fun logout() {
+        with(prefs.edit()) {
+            putBoolean("IS_LOGGED_IN", false)
+            putLong("LOGIN_TIMESTAMP", 0)
+            apply()
+        }
+    }
 }

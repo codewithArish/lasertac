@@ -7,9 +7,6 @@ import androidx.work.WorkerParameters
 import com.lasertrac.app.db.AppDatabase
 import com.lasertrac.app.network.RetrofitInstance
 import com.lasertrac.app.network.models.RegisterRequest
-import com.lasertrac.app.repository.UserRepository
-import com.lasertrac.app.security.CredentialsManager
-import com.lasertrac.app.utils.NetworkStatusTracker
 
 class SyncRegistrationWorker(
     appContext: Context,
@@ -19,50 +16,57 @@ class SyncRegistrationWorker(
     override suspend fun doWork(): Result {
         val userDao = AppDatabase.getDatabase(applicationContext).userDao()
         val apiService = RetrofitInstance.api
+        // Fetch all users that have not been synced to the server yet.
         val unsyncedUsers = userDao.getUnsyncedUsers()
 
         if (unsyncedUsers.isEmpty()) {
-            Log.d("SyncWorker", "No unsynced users to process.")
+            Log.i("SyncRegistrationWorker", "No unsynced users to process. Work is complete.")
             return Result.success()
         }
 
-        Log.d("SyncWorker", "Found ${unsyncedUsers.size} unsynced users. Starting sync...")
+        Log.i("SyncRegistrationWorker", "Found ${unsyncedUsers.size} unsynced users. Starting sync process...")
 
-        var successCount = 0
+        var needsRetry = false
+
         for (user in unsyncedUsers) {
             try {
-                val response = apiService.register(RegisterRequest(user.name, user.email, user.pass))
+                val registerRequest = RegisterRequest(user.name, user.email, user.pass)
+                val response = apiService.register(registerRequest)
+
                 if (response.isSuccessful && response.body() != null) {
                     val authResponse = response.body()!!
-                    if (authResponse.success) {
-                        authResponse.user?.let { userResponse ->
-                            val updatedUser = user.copy(
-                                serverId = userResponse.id,
-                                isSynced = true,
-                                pass = "" // Clear password after successful sync
-                            )
-                            userDao.updateUser(updatedUser)
-                            successCount++
-                            Log.i("SyncWorker", "Successfully synced user: ${user.email}")
-                        }
+                    // **THE FIX**: Check for the 'status' string, not the old 'success' boolean.
+                    if (authResponse.status == "success") {
+                        // The server has successfully created the user.
+                        // Update the local user to mark them as synced and clear the password.
+                        val updatedUser = user.copy(isSynced = true, pass = "")
+                        userDao.updateUser(updatedUser)
+                        Log.i("SyncRegistrationWorker", "Successfully synced registration for user: ${user.email}")
                     } else {
-                        Log.e("SyncWorker", "Sync failed for ${user.email}: ${authResponse.message}")
+                        // The server returned a known error (e.g., "user already exists").
+                        // This is a permanent failure for this user. Mark as synced to prevent retrying.
+                        Log.e("SyncRegistrationWorker", "Permanent sync failure for ${user.email}: ${authResponse.message}")
+                        userDao.updateUser(user.copy(isSynced = true, pass = ""))
                     }
                 } else {
-                    Log.e("SyncWorker", "Sync failed for ${user.email}: Server responded with code ${response.code()}")
+                    // A server error (500, 404, etc.) occurred. We should retry this.
+                    Log.e("SyncRegistrationWorker", "Sync failed for ${user.email}: Server responded with code ${response.code()}")
+                    needsRetry = true
                 }
             } catch (e: Exception) {
-                Log.e("SyncWorker", "Sync exception for ${user.email}", e)
-                // Decide on retry logic. For now, we just let it try again on the next run.
+                // A network or other exception occurred. We should retry this.
+                Log.e("SyncRegistrationWorker", "Sync exception for ${user.email}. Will retry later.", e)
+                needsRetry = true
+                break // If the network is down, stop trying to sync other users in this batch
             }
         }
 
-        return if (successCount == unsyncedUsers.size) {
-            Log.d("SyncWorker", "All unsynced users have been synced.")
-            Result.success()
-        } else {
-            Log.w("SyncWorker", "Sync partially failed. Will retry later.")
+        return if (needsRetry) {
+            Log.w("SyncRegistrationWorker", "One or more users failed to sync due to a recoverable error. Retrying later.")
             Result.retry()
+        } else {
+            Log.i("SyncRegistrationWorker", "Sync batch finished. Some users may have had permanent failures.")
+            Result.success()
         }
     }
 }

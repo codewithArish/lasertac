@@ -23,22 +23,29 @@ class NetworkStatusTracker(context: Context) {
         }
 
         override fun onLost(network: Network) {
-            // Check if there are OTHER available networks before declaring offline
-            _isOnline.value = isCurrentlyOnline()
+            // DEFINITIVE FIX: Directly set to false. The onAvailable will correct it if a new network appears.
+            _isOnline.value = false
         }
     }
 
     init {
         val networkRequest = NetworkRequest.Builder()
             .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+            .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
             .build()
         connectivityManager.registerNetworkCallback(networkRequest, networkCallback)
     }
 
+    // More robust check for the initial state
     private fun isCurrentlyOnline(): Boolean {
-        val network = connectivityManager.activeNetwork
-        val capabilities = connectivityManager.getNetworkCapabilities(network)
-        return capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+        val activeNetwork = connectivityManager.activeNetwork
+        val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork)
+        return capabilities?.run {
+            hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+            hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
+            hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+        } == true
     }
 
     fun stop() {
