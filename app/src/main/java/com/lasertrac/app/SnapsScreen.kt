@@ -264,7 +264,7 @@ private fun NormalTopAppBar(
     onInfoClick: () -> Unit
 ) {
     TopAppBar(
-        title = { 
+        title = {
             if (isSearchActive) {
                 BasicTextField(
                     value = searchQuery,

@@ -19,7 +19,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,7 +30,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -65,17 +64,15 @@ class MainActivity : ComponentActivity() {
         setContent {
             Lasertac2Theme {
                 var currentScreen by remember { mutableStateOf(Screen.Dashboard) }
-                val sessionManager = remember { SessionManager(applicationContext) }
-                var isLoggedIn by remember { mutableStateOf(sessionManager.isSessionValid()) }
-
-                val logout = {
-                    sessionManager.logout()
-                    isLoggedIn = false
-                }
+                var isLoggedIn by remember { mutableStateOf(false) }
 
                 if (!isLoggedIn) {
                     AuthScreen(onLoginSuccess = { isLoggedIn = true })
                 } else {
+                    val logout = {
+                        isLoggedIn = false
+                        currentScreen = Screen.Dashboard // Reset to dashboard on logout
+                    }
                     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
                     val scope = rememberCoroutineScope()
 
@@ -89,10 +86,10 @@ class MainActivity : ComponentActivity() {
                             ModalDrawerSheet {
                                 Spacer(Modifier.height(12.dp))
                                 NavigationDrawerItem(
-                                    icon = { Icon(Icons.Default.Logout, contentDescription = "Logout") },
+                                    icon = { Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Logout") },
                                     label = { Text("Logout") },
                                     selected = false,
-                                    onClick = { 
+                                    onClick = {
                                         scope.launch { drawerState.close() }
                                         logout()
                                     }
@@ -100,7 +97,7 @@ class MainActivity : ComponentActivity() {
                             }
                         },
                         content = {
-                             when (currentScreen) {
+                            when (currentScreen) {
                                 Screen.Dashboard -> MainDashboardScreen(
                                     onMenuClick = { scope.launch { drawerState.open() } },
                                     onNavigateToSettings = { currentScreen = Screen.Settings },

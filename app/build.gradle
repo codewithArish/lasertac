@@ -16,14 +16,6 @@ android {
         versionName "1.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
-
-        javaCompileOptions {
-            annotationProcessorOptions {
-                arguments += [
-                    "room.schemaLocation": "$projectDir/schemas".toString()
-                ]
-            }
-        }
     }
 
     buildTypes {
@@ -44,6 +36,12 @@ android {
     }
     composeOptions {
         kotlinCompilerExtensionVersion = libs.versions.composeCompiler.get()
+    }
+}
+
+kapt {
+    arguments {
+        arg("room.schemaLocation", "$projectDir/schemas")
     }
 }
 
