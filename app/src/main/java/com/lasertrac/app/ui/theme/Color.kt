@@ -17,3 +17,7 @@ val AccentTeal = Color(0xFF00ACC1)
 val LightGrayBackground = Color(0xFFF5F5F5)
 val DarkGrayText = Color(0xFF333333)
 val CardBackground = Color.White // Though Color.White is standard, defining for clarity or future change
+
+val TextColorLight = Color.White
+val TopBarColor = Color(0xFF1B263B)
+val DashboardIconCircleBg = Color(0x1AFFFFFF) // White with 10% opacity

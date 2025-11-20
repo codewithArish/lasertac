@@ -12,7 +12,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
-import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
 import android.util.Log
@@ -50,11 +49,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.TextField
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -80,6 +74,8 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import com.lasertrac.app.db.SnapDetail
+import com.lasertrac.app.db.SnapStatus
 import com.lasertrac.app.ui.theme.Lasertac2Theme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -166,13 +162,20 @@ fun generateChallanPdf(context: Context, snapDetail: SnapDetail) {
     savePdfToDownloads(context, pdfDocument, "challan_${snapDetail.recordNr}.pdf")
 }
 
-private fun loadBitmapFromAny(context: Context, imageSource: Any): Bitmap? {
+private fun loadBitmapFromAny(context: Context, imageSource: Any?): Bitmap? {
     return when (imageSource) {
-        is Int -> {
+        is String -> {
             try {
-                BitmapFactory.decodeResource(context.resources, imageSource)
+                val uri = Uri.parse(imageSource)
+                if (uri.scheme == "file") {
+                    BitmapFactory.decodeFile(uri.path)
+                } else {
+                    context.contentResolver.openInputStream(uri)?.use {
+                        BitmapFactory.decodeStream(it)
+                    }
+                }
             } catch (e: Exception) {
-                Log.e("PdfUtils", "Error loading bitmap from resource: ${e.message}")
+                Log.e("PdfUtils", "Error loading bitmap from String: ${e.message}")
                 null
             }
         }
@@ -183,12 +186,21 @@ private fun loadBitmapFromAny(context: Context, imageSource: Any): Bitmap? {
                 }
             } catch (e: Exception) {
                 Log.e("PdfUtils", "Error loading bitmap from URI: ${e.message}")
-                e.printStackTrace()
+                null
+            }
+        }
+        is Int -> {
+            try {
+                BitmapFactory.decodeResource(context.resources, imageSource)
+            } catch (e: Exception) {
+                Log.e("PdfUtils", "Error loading bitmap from resource: ${e.message}")
                 null
             }
         }
         else -> {
-            Log.w("PdfUtils", "Unsupported image source type: ${imageSource.javaClass.name}")
+            if (imageSource != null) {
+                Log.w("PdfUtils", "Unsupported image source type: ${imageSource.javaClass.name}")
+            }
             null
         }
     }
@@ -272,7 +284,7 @@ fun ImagePreviewScreen(
                             delay(800)
                             onStatusChange(
                                 snapDetail.copy(
-                                    status = SnapStatus.UPDATED,
+                                    status = SnapStatus.PENDING, // Changed from UPDATED
                                     uploadStatus = "Updated"
                                 )
                             )
@@ -295,7 +307,7 @@ fun ImagePreviewScreen(
                             actionStatus = ActionStatus.SUCCESS
                         }
                     },
-                    isUploadEnabled = snapDetail.status == SnapStatus.UPDATED,
+                    isUploadEnabled = snapDetail.status == SnapStatus.PENDING, // Changed from UPDATED
                     onRejectClick = {
                         scope.launch {
                             statusText = "Rejecting..."
@@ -314,26 +326,12 @@ fun ImagePreviewScreen(
                     onPrintClick = { generateChallanPdf(context, snapDetail) },
                     onShareClick = {
                         shareSnapDetailsAsText(context, snapDetail)
-                        onStatusChange(
-                            snapDetail.copy(
-                                status = if (snapDetail.status != SnapStatus.REJECTED) SnapStatus.UPDATED else snapDetail.status,
-                                uploadStatus = "Shared"
-                            )
-                        )
                     }
                 )
 
                 MainImageSection(snapDetail, onPrev, onNext, isPrevEnabled, isNextEnabled)
                 ContextualImagesSection(snapDetail)
                 ExcelDetailsGrid(snapDetail)
-                ViolationSelector(
-                    currentSummary = snapDetail.violationSummary,
-                    enabled = snapDetail.status == SnapStatus.PENDING,
-                    onSelected = { selected ->
-                        onStatusChange(snapDetail.copy(violationSummary = selected))
-                    }
-                )
-                AdditionalDummyDetailsSection()
                 Spacer(modifier = Modifier.height(60.dp))
             }
         }
@@ -346,7 +344,7 @@ fun ImagePreviewScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.5f)),
+                    .background(Color.Black.copy(alpha = 0.5f)),
                 contentAlignment = Alignment.Center
             ) {
                 AnimatedStatusLogo(status = actionStatus, text = statusText)
@@ -379,14 +377,21 @@ private fun PageHeader(snapDetail: SnapDetail, onClose: () -> Unit) {
 
 @Composable
 fun StatusChip(status: SnapStatus) {
+    val color = when (status) {
+        SnapStatus.PENDING -> Color.Blue
+        SnapStatus.UPLOADED -> Color.Green
+        SnapStatus.REJECTED -> Color.Red
+        SnapStatus.FAILED -> Color.Gray
+        SnapStatus.UPDATED -> Color.Yellow
+    }
     Box(
         modifier = Modifier
-            .background(status.color, RoundedCornerShape(50))
+            .background(color, RoundedCornerShape(50))
             .padding(horizontal = 8.dp, vertical = 4.dp)
     ) {
         Text(
             text = status.name,
-            color = androidx.compose.ui.graphics.Color.White,
+            color = Color.White,
             fontSize = 10.sp,
             fontWeight = FontWeight.Bold
         )
@@ -406,8 +411,8 @@ private fun AnimatedStatusLogo(status: ActionStatus, text: String) {
             Crossfade(targetState = status, animationSpec = tween(300)) { currentStatus ->
                 when (currentStatus) {
                     ActionStatus.IN_PROGRESS -> CircularProgressIndicator(modifier = Modifier.size(60.dp))
-                    ActionStatus.SUCCESS -> Icon(Icons.Default.Check, "Success", modifier = Modifier.size(60.dp), tint = androidx.compose.ui.graphics.Color.Green)
-                    ActionStatus.FAILURE -> Icon(Icons.Default.Close, "Failure", modifier = Modifier.size(60.dp), tint = androidx.compose.ui.graphics.Color.Red)
+                    ActionStatus.SUCCESS -> Icon(Icons.Default.Check, "Success", modifier = Modifier.size(60.dp), tint = Color.Green)
+                    ActionStatus.FAILURE -> Icon(Icons.Default.Close, "Failure", modifier = Modifier.size(60.dp), tint = Color.Red)
                     ActionStatus.IDLE -> {}
                 }
             }
@@ -438,13 +443,13 @@ private fun MainImageSection(
         Spacer(modifier = Modifier.height(8.dp))
         Box(contentAlignment = Alignment.TopCenter, modifier = Modifier.fillMaxWidth()) {
             AsyncImage(model = snapDetail.mainImage, contentDescription = "Main preview", modifier = Modifier.fillMaxWidth().aspectRatio(4f / 3f).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
-            Card(modifier = Modifier.padding(8.dp), colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.5f)), shape = RoundedCornerShape(8.dp)) {
+            Card(modifier = Modifier.padding(8.dp), colors = CardDefaults.cardColors(containerColor = Color.Black.copy(alpha = 0.5f)), shape = RoundedCornerShape(8.dp)) {
                 Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Speed: ", color = androidx.compose.ui.graphics.Color.White, fontSize = 12.sp)
-                    Text("${snapDetail.speed}", color = androidx.compose.ui.graphics.Color.Red, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    Text(" / ${snapDetail.speedLimit} km/h", color = androidx.compose.ui.graphics.Color.White, fontSize = 12.sp)
+                    Text("Speed: ", color = Color.White, fontSize = 12.sp)
+                    Text("${snapDetail.speed}", color = Color.Red, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    Text(" / ${snapDetail.speedLimit} km/h", color = Color.White, fontSize = 12.sp)
                     Spacer(modifier = Modifier.width(16.dp))
-                    Text("Dist: ${snapDetail.violationDistance}", color = androidx.compose.ui.graphics.Color.White, fontSize = 12.sp)
+                    Text("Dist: ${snapDetail.violationDistance}", color = Color.White, fontSize = 12.sp)
                 }
             }
         }
@@ -456,10 +461,10 @@ private fun ContextualImagesSection(snapDetail: SnapDetail) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Box(modifier = Modifier.weight(1.5f).height(80.dp).clip(RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
             AsyncImage(model = snapDetail.licensePlateImage, contentDescription = "License plate", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-            Box(modifier = Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.4f)))
-            Text(text = snapDetail.regNr, color = androidx.compose.ui.graphics.Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+            Box(modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)))
+            Text(text = snapDetail.regNr, color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
         }
-        AsyncImage(model = snapDetail.mapImage, contentDescription = "Map preview", modifier = Modifier.weight(1f).height(80.dp).clip(RoundedCornerShape(8.dp)).border(1.dp, androidx.compose.ui.graphics.Color.Gray, RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
+        AsyncImage(model = snapDetail.mapImage, contentDescription = "Map preview", modifier = Modifier.weight(1f).height(80.dp).clip(RoundedCornerShape(8.dp)).border(1.dp, Color.Gray, RoundedCornerShape(8.dp)), contentScale = ContentScale.Crop)
     }
 }
 
@@ -509,29 +514,6 @@ private fun ExcelDetailsGrid(snapDetail: SnapDetail) {
 }
 
 @Composable
-private fun AdditionalDummyDetailsSection() {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-    ) {
-        Column(modifier = Modifier.padding(all = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Additional Details (Dummy)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                InfoCell("Officer Name", "Inspector Sharma", Modifier.weight(1f))
-                InfoCell("Challan Amount", "₹ 1,000", Modifier.weight(1f), valueColor = Color(0xFFAA0000))
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                InfoCell("Vehicle Type", "Sedan", Modifier.weight(1f))
-                InfoCell("Color", "White", Modifier.weight(1f))
-            }
-            InfoCell("Remarks", "Sample data for preview and layout testing.")
-        }
-    }
-}
-
-@Composable
 private fun InfoCell(label: String, value: String, modifier: Modifier = Modifier, valueColor: Color = Color.Unspecified, highlight: Boolean = false) {
     Column(modifier = modifier.border(0.5.dp, Color.LightGray).padding(horizontal = 4.dp, vertical = 2.dp)) {
         Text(label, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha=0.7f))
@@ -555,69 +537,6 @@ private fun HighlightedViolationCell(value: String) {
             color = if (value.isEmpty()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.SemiBold
         )
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun ViolationSelector(
-    currentSummary: String,
-    enabled: Boolean,
-    onSelected: (String) -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
-    var fieldText by remember { mutableStateOf(currentSummary) }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(1.dp, Color(0xFF7C4DFF), RoundedCornerShape(12.dp))
-            .background(Color(0x1A7C4DFF), RoundedCornerShape(12.dp))
-            .padding(8.dp)
-    ) {
-        Text(
-            text = "Select Violation",
-            fontSize = 12.sp,
-            color = Color(0xFF7C4DFF),
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(modifier = Modifier.height(6.dp))
-        ExposedDropdownMenuBox(
-            expanded = expanded && enabled,
-            onExpandedChange = { if (enabled) expanded = !expanded }
-        ) {
-            TextField(
-                value = fieldText,
-                onValueChange = {},
-                readOnly = true,
-                enabled = enabled,
-                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                modifier = Modifier
-                    .menuAnchor()
-                    .fillMaxWidth(),
-                colors = ExposedDropdownMenuDefaults.textFieldColors(
-                    focusedContainerColor = Color.White,
-                    unfocusedContainerColor = Color.White
-                ),
-                placeholder = { Text("Choose a violation") }
-            )
-            DropdownMenu(
-                expanded = expanded && enabled,
-                onDismissRequest = { expanded = false }
-            ) {
-                ViolationRepository.violations.forEach { violation ->
-                    val label = "${violation.actId} ${violation.actName}"
-                    DropdownMenuItem(
-                        text = { Text(label) },
-                        onClick = {
-                            fieldText = label
-                            expanded = false
-                            onSelected(label)
-                        }
-                    )
-                }
-            }
-        }
     }
 }
 
@@ -659,6 +578,7 @@ private class PdfLayoutManager(private val document: PdfDocument, private val pa
 
     private fun checkNewPage(requiredHeight: Float, forceSinglePage: Boolean = false) {
         if (forceSinglePage && yPos + requiredHeight > pageEffectiveHeight) {
+            Log.w("PdfLayoutManager", "Content might overflow the page.")
         }
     }
 
@@ -831,31 +751,31 @@ private fun savePdfToDownloads(context: Context, document: PdfDocument, fileName
 @Composable
 private fun ImagePreviewScreenPreview() {
     val dummySnap = SnapDetail(
-        id = "prev_mock1",
-        regNr = "PREV1234",
-        dateTime = "2023-10-27 10:30:00",
-        speed = 100,
-        speedLimit = 80,
-        location = "Preview Highway",
-        evidenceDate = "2023-10-27",
-        district = "Preview District",
-        policeStation = "Preview PS",
-        address = "123 Preview Lane",
-        latitude = "12.345",
-        longitude = "67.890",
-        recordNr = "PREC-123",
-        deviceId = "PDEV-01",
-        operatorId = "POP-01",
-        violationDistance = "120m",
+        id = "1",
+        recordNr = "REC12345",
+        dateTime = "2025-11-17 10:30:00",
+        operatorId = "OP-01",
+        deviceId = "DEV-007",
+        violationDistance = "100m",
+        speedLimit = 60,
+        speed = 85,
+        regNr = "XYZ-786",
+        regNrStatus = "Valid",
+        location = "Main Street",
+        latitude = "34.0522",
+        longitude = "-118.2437",
+        district = "Central District",
+        policeStation = "Main Precinct",
+        address = "123 Main St, Anytown",
+        violationSummary = "Overspeeding",
         uploadStatus = "Pending",
         status = SnapStatus.PENDING,
-        mainImage = R.drawable.ic_snaps_custom,
-        licensePlateImage = R.drawable.ic_snaps_custom,
-        mapImage = R.drawable.ic_snaps_custom,
-        violationSummary = "Overspeeding",
-        violationManagementLink = "http://example.com/violation/manage/PREV1",
-        accessLink = "http://example.com/access/PREV1",
-        regNrStatus = "Valid"
+        mainImage = null,
+        licensePlateImage = null,
+        mapImage = null,
+        evidenceDate = "2025-11-17",
+        violationManagementLink = "",
+        accessLink = ""
     )
     Lasertac2Theme {
         ImagePreviewScreen(

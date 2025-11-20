@@ -12,7 +12,16 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -21,11 +30,26 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberDrawerState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
@@ -36,6 +60,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lasertrac.app.db.AppDatabase
 import com.lasertrac.app.ui.AuthScreen
 import com.lasertrac.app.ui.theme.DashboardIconCircleBg
@@ -100,19 +125,22 @@ class MainActivity : ComponentActivity() {
                             when (currentScreen) {
                                 Screen.Dashboard -> MainDashboardScreen(
                                     onMenuClick = { scope.launch { drawerState.open() } },
-                                    onNavigateToSettings = { currentScreen = Screen.Settings },
-                                    onNavigateToVideos = { currentScreen = Screen.Videos },
-                                    onNavigateToFTP = { currentScreen = Screen.FTP },
-                                    onNavigateToDeviceId = { currentScreen = Screen.DeviceId },
-                                    onNavigateToViolations = { currentScreen = Screen.Violations },
-                                    onNavigateToReports = { currentScreen = Screen.Reports },
-                                    onNavigateToSnaps = { currentScreen = Screen.Snaps }
+                                    onNavigateTo = { screen -> currentScreen = screen }
                                 )
                                 Screen.Settings -> SettingsScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
                                 Screen.Videos -> VideosScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
-                                Screen.FTP -> FTPScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
+                                Screen.FTP -> {
+                                     val ftpViewModel: FTPViewModel = viewModel(factory = FTPViewModelFactory(appDb.snapLocationDao()))
+                                    FTPScreen(
+                                        onNavigateBack = { currentScreen = Screen.Dashboard },
+                                        ftpViewModel = ftpViewModel
+                                    )
+                                }
                                 Screen.DeviceId -> DeviceIdScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
-                                Screen.Violations -> ViolationsScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
+                                Screen.Violations -> ViolationsScreen(
+                                    onNavigateBack = { currentScreen = Screen.Dashboard },
+                                    violationDao = appDb.violationDao()
+                                )
                                 Screen.Reports -> ReportsScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
                                 Screen.Snaps -> SnapsScreen(
                                     onNavigateBack = { currentScreen = Screen.Dashboard },
@@ -131,22 +159,16 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun MainDashboardScreen(
     onMenuClick: () -> Unit,
-    onNavigateToSettings: () -> Unit,
-    onNavigateToVideos: () -> Unit,
-    onNavigateToFTP: () -> Unit,
-    onNavigateToDeviceId: () -> Unit,
-    onNavigateToViolations: () -> Unit,
-    onNavigateToReports: () -> Unit,
-    onNavigateToSnaps: () -> Unit
+    onNavigateTo: (Screen) -> Unit
 ) {
     val features = listOf(
-        FeatureGridItemData("Snaps", R.drawable.ic_snaps_custom, DashboardIconCircleBg) { onNavigateToSnaps() },
-        FeatureGridItemData("Videos", R.drawable.ic_videos_custom, DashboardIconCircleBg) { onNavigateToVideos() },
-        FeatureGridItemData("Settings", R.drawable.ic_settings_custom, DashboardIconCircleBg) { onNavigateToSettings() },
-        FeatureGridItemData("FTP", R.drawable.ic_ftp_custom, DashboardIconCircleBg) { onNavigateToFTP() },
-        FeatureGridItemData("Device ID", R.drawable.ic_device_id_custom, DashboardIconCircleBg) { onNavigateToDeviceId() },
-        FeatureGridItemData("Violations", R.drawable.ic_violations_custom, DashboardIconCircleBg) { onNavigateToViolations() },
-        FeatureGridItemData("Reports", R.drawable.ic_reports_custom, DashboardIconCircleBg) { onNavigateToReports() }
+        FeatureGridItemData("Snaps", R.drawable.ic_snaps_custom, DashboardIconCircleBg) { onNavigateTo(Screen.Snaps) },
+        FeatureGridItemData("Videos", R.drawable.ic_videos_custom, DashboardIconCircleBg) { onNavigateTo(Screen.Videos) },
+        FeatureGridItemData("Settings", R.drawable.ic_settings_custom, DashboardIconCircleBg) { onNavigateTo(Screen.Settings) },
+        FeatureGridItemData("FTP", R.drawable.ic_ftp_custom, DashboardIconCircleBg) { onNavigateTo(Screen.FTP) },
+        FeatureGridItemData("Device ID", R.drawable.ic_device_id_custom, DashboardIconCircleBg) { onNavigateTo(Screen.DeviceId) },
+        FeatureGridItemData("Violations", R.drawable.ic_violations_custom, DashboardIconCircleBg) { onNavigateTo(Screen.Violations) },
+        FeatureGridItemData("Reports", R.drawable.ic_reports_custom, DashboardIconCircleBg) { onNavigateTo(Screen.Reports) }
     )
 
     Scaffold(
@@ -175,7 +197,7 @@ fun MainDashboardScreen(
             Image(
                 painter = painterResource(id = R.drawable.dashboard_background_device),
                 contentDescription = "Dashboard Background",
-                modifier = Modifier.fillMaxSize().blur(radius = 4.dp),
+                modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
             )
 
@@ -246,8 +268,7 @@ fun FeatureGridButton(item: FeatureGridItemData) {
     Column(
         modifier = Modifier
             .scale(scale.value)
-            .clickable {
-                scope.launch {
+            .clickable {                scope.launch {
                     scale.animateTo(1.15f, animationSpec = tween(durationMillis = 100))
                     scale.animateTo(1f, animationSpec = tween(durationMillis = 100))
                     item.onClick()
@@ -295,13 +316,7 @@ fun MainDashboardScreenPreview_New() {
         Box(modifier = Modifier.background(Color(0xFF42475A))) {
             MainDashboardScreen(
                 onMenuClick = {},
-                onNavigateToSettings = {},
-                onNavigateToVideos = {},
-                onNavigateToFTP = {},
-                onNavigateToDeviceId = {},
-                onNavigateToViolations = {},
-                onNavigateToReports = {},
-                onNavigateToSnaps = {}
+                onNavigateTo = {}
             )
         }
     }

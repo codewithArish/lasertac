@@ -2,8 +2,12 @@ package com.lasertrac.app
 
 import android.content.Context
 import android.net.Uri
+import android.os.Environment
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.lasertrac.app.db.SavedSnapLocationEntity
+import com.lasertrac.app.db.SnapLocationDao
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,22 +18,27 @@ import org.apache.commons.net.ftp.FTP
 import org.apache.commons.net.ftp.FTPClient
 import java.io.File
 import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.UUID
 
-enum class FtpStatus { IDLE, CONNECTING, UPLOADING, CONNECTION_SUCCESS, CONNECTION_ERROR, UPLOAD_SUCCESS, UPLOAD_ERROR }
+enum class FtpStatus { IDLE, CONNECTING, UPLOADING, SYNCING, CONNECTION_SUCCESS, CONNECTION_ERROR, UPLOAD_SUCCESS, UPLOAD_ERROR, SYNC_SUCCESS, SYNC_ERROR }
 
-class FTPViewModel : ViewModel() {
+class FTPViewModel(private val snapLocationDao: SnapLocationDao) : ViewModel() {
 
-    private val _ftpServer = MutableStateFlow("192.168.1.12")
+    private val _ftpServer = MutableStateFlow("192.168.10.1")
     val ftpServer: StateFlow<String> = _ftpServer.asStateFlow()
 
-    private val _ftpPort = MutableStateFlow("2221")
+    private val _ftpPort = MutableStateFlow("21")
     val ftpPort: StateFlow<String> = _ftpPort.asStateFlow()
 
-    private val _ftpUsername = MutableStateFlow("")
+    private val _ftpUsername = MutableStateFlow("TP0003P")
     val ftpUsername: StateFlow<String> = _ftpUsername.asStateFlow()
 
-    private val _ftpPassword = MutableStateFlow("")
+    private val _ftpPassword = MutableStateFlow("12345678")
     val ftpPassword: StateFlow<String> = _ftpPassword.asStateFlow()
 
     private val _departmentName = MutableStateFlow("")
@@ -152,5 +161,71 @@ class FTPViewModel : ViewModel() {
             }
             _status.value = result ?: FtpStatus.UPLOAD_ERROR
         }
+    }
+
+    fun syncSnaps(context: Context) {
+        viewModelScope.launch {
+            _status.value = FtpStatus.SYNCING
+            val result = withContext(Dispatchers.IO) {
+                val ftpClient = FTPClient()
+                try {
+                    ftpClient.connect(_ftpServer.value, _ftpPort.value.toInt())
+                    if (!ftpClient.login(_ftpUsername.value, _ftpPassword.value)) {
+                        _errorMessage.value = "FTP login failed. Please retry."
+                        return@withContext FtpStatus.SYNC_ERROR
+                    }
+
+                    ftpClient.enterLocalPassiveMode()
+                    ftpClient.setFileType(FTP.BINARY_FILE_TYPE)
+
+                    val today = SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())
+                    val remoteBaseDir = "/manual_capture/"
+
+                    val directories = ftpClient.listDirectories(remoteBaseDir)
+                    val todayDirectories = directories.filter { it.isDirectory && it.name.startsWith(today) }
+
+                    for (dir in todayDirectories) {
+                        val files = ftpClient.listFiles("${remoteBaseDir}${dir.name}")
+                        for (file in files) {
+                            val localFile = File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES), file.name)
+                            val outputStream = FileOutputStream(localFile)
+                            outputStream.use { 
+                                ftpClient.retrieveFile("${remoteBaseDir}${dir.name}/${file.name}", it)
+                            }
+                            val snap = SavedSnapLocationEntity(
+                                snapId = UUID.randomUUID().toString(),
+                                imageUri = localFile.absolutePath,
+                                timestamp = System.currentTimeMillis()
+                            )
+                            snapLocationDao.insertOrUpdateSnapLocation(snap)
+                        }
+                    }
+                    FtpStatus.SYNC_SUCCESS
+                } catch (e: IOException) {
+                    _errorMessage.value = e.message
+                    FtpStatus.SYNC_ERROR
+                } finally {
+                    try {
+                        if (ftpClient.isConnected) {
+                            ftpClient.logout()
+                            ftpClient.disconnect()
+                        }
+                    } catch (ex: IOException) {
+                        // Ignore
+                    }
+                }
+            }
+            _status.value = result ?: FtpStatus.SYNC_ERROR
+        }
+    }
+}
+
+class FTPViewModelFactory(private val snapLocationDao: SnapLocationDao) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(FTPViewModel::class.java)) {
+            @Suppress("UNCHECKED_CAST")
+            return FTPViewModel(snapLocationDao) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
     }
 }

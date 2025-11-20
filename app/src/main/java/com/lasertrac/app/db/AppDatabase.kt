@@ -5,13 +5,13 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-// DEFINITIVE FIX: Restored SavedSnapLocationEntity and incremented the version number
-@Database(entities = [User::class, SavedSnapLocationEntity::class], version = 4, exportSchema = false)
+@Database(entities = [User::class, SavedSnapLocationEntity::class, Violation::class, SnapDetail::class], version = 5, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun userDao(): UserDao
-    // DEFINITIVE FIX: Restored the snapLocationDao
     abstract fun snapLocationDao(): SnapLocationDao
+    abstract fun violationDao(): ViolationDao
+    abstract fun snapDao(): SnapDao
 
     companion object {
         @Volatile
@@ -24,8 +24,8 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "lasertrac_database"
                 )
-                .fallbackToDestructiveMigration()
-                .build()
+                    .fallbackToDestructiveMigration()
+                    .build()
                 INSTANCE = instance
                 instance
             }

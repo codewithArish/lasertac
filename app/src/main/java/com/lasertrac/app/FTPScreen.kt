@@ -54,14 +54,15 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.rememberAsyncImagePainter
 import com.lasertrac.app.ui.theme.TextColorLight
 import com.lasertrac.app.ui.theme.TopBarColor
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FTPScreen(onNavigateBack: () -> Unit, ftpViewModel: FTPViewModel = viewModel()) {
+fun FTPScreen(onNavigateBack: () -> Unit, ftpViewModel: FTPViewModel) {
+    val context = LocalContext.current
+
     val ftpServer by ftpViewModel.ftpServer.collectAsState()
     val ftpPort by ftpViewModel.ftpPort.collectAsState()
     val ftpUsername by ftpViewModel.ftpUsername.collectAsState()
@@ -72,7 +73,6 @@ fun FTPScreen(onNavigateBack: () -> Unit, ftpViewModel: FTPViewModel = viewModel
     val errorMessage by ftpViewModel.errorMessage.collectAsState()
 
     var passwordVisible by remember { mutableStateOf(false) }
-    val context = LocalContext.current
 
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -137,20 +137,36 @@ fun FTPScreen(onNavigateBack: () -> Unit, ftpViewModel: FTPViewModel = viewModel
                         onVisibilityToggle = { passwordVisible = !passwordVisible }
                     )
 
-                    Button(
-                        onClick = { ftpViewModel.connectAndTest() },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 32.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B5E20)),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text(
-                            text = "TEST CONNECTION",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium,
-                            modifier = Modifier.padding(vertical = 4.dp)
-                        )
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        val isOperationRunning = status == FtpStatus.CONNECTING || status == FtpStatus.SYNCING
+                        Button(
+                            onClick = { ftpViewModel.connectAndTest() },
+                            modifier = Modifier.weight(1f),
+                            enabled = !isOperationRunning,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B5E20)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text(
+                                text = "TEST CONNECTION",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            )
+                        }
+                        Button(
+                            onClick = { ftpViewModel.syncSnaps(context) },
+                            modifier = Modifier.weight(1f),
+                            enabled = !isOperationRunning,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D47A1)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text(
+                                text = "SYNC SNAPS",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -159,28 +175,32 @@ fun FTPScreen(onNavigateBack: () -> Unit, ftpViewModel: FTPViewModel = viewModel
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(modifier = Modifier.size(24.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Connecting...",
-                        fontSize = 14.sp,
-                        color = Color(0xFF4A90E2)
-                    )
+                    Text(text = "Connecting...", fontSize = 14.sp, color = Color(0xFF4A90E2))
                 }
             }
 
             if (status == FtpStatus.CONNECTION_SUCCESS) {
-                Text(
-                    text = "Connection successful!",
-                    fontSize = 14.sp,
-                    color = Color.Green
-                )
+                Text(text = "Connection successful!", fontSize = 14.sp, color = Color.Green)
             }
 
             if (status == FtpStatus.CONNECTION_ERROR) {
-                Text(
-                    text = "Connection Error: ${errorMessage ?: "Unknown error"}",
-                    fontSize = 14.sp,
-                    color = Color.Red
-                )
+                Text(text = "Connection Error: ${errorMessage ?: "Unknown error"}", fontSize = 14.sp, color = Color.Red)
+            }
+
+            if (status == FtpStatus.SYNCING) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = "Syncing...", fontSize = 14.sp, color = Color(0xFF4A90E2))
+                }
+            }
+
+            if (status == FtpStatus.SYNC_SUCCESS) {
+                Text(text = "Sync successful!", fontSize = 14.sp, color = Color.Green)
+            }
+
+            if (status == FtpStatus.SYNC_ERROR) {
+                Text(text = "Sync Error: ${errorMessage ?: "Unknown error"}", fontSize = 14.sp, color = Color.Red)
             }
 
             Card(
@@ -192,11 +212,7 @@ fun FTPScreen(onNavigateBack: () -> Unit, ftpViewModel: FTPViewModel = viewModel
                     modifier = Modifier.padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Text(
-                        text = "Department Name",
-                        fontSize = 14.sp,
-                        color = Color(0xFFAAAAAA)
-                    )
+                    Text(text = "Department Name", fontSize = 14.sp, color = Color(0xFFAAAAAA))
 
                     OutlinedTextField(
                         value = departmentName,
@@ -212,17 +228,10 @@ fun FTPScreen(onNavigateBack: () -> Unit, ftpViewModel: FTPViewModel = viewModel
                         shape = RoundedCornerShape(8.dp)
                     )
 
-                    Text(
-                        text = "Department Logo",
-                        fontSize = 14.sp,
-                        color = Color(0xFFAAAAAA)
-                    )
+                    Text(text = "Department Logo", fontSize = 14.sp, color = Color(0xFFAAAAAA))
 
                     Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(200.dp)
-                            .background(Color(0xFF3A3A3A), RoundedCornerShape(8.dp)),
+                        modifier = Modifier.fillMaxWidth().height(200.dp).background(Color(0xFF3A3A3A), RoundedCornerShape(8.dp)),
                         contentAlignment = Alignment.Center
                     ) {
                         if (selectedImageUri != null) {
@@ -233,18 +242,12 @@ fun FTPScreen(onNavigateBack: () -> Unit, ftpViewModel: FTPViewModel = viewModel
                                 contentScale = ContentScale.Fit
                             )
                         } else {
-                            Text(
-                                text = "No logo selected",
-                                color = Color(0xFF888888),
-                                fontSize = 14.sp
-                            )
+                            Text(text = "No logo selected", color = Color(0xFF888888), fontSize = 14.sp)
                         }
                     }
 
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally)
                     ) {
                         Button(
@@ -259,62 +262,36 @@ fun FTPScreen(onNavigateBack: () -> Unit, ftpViewModel: FTPViewModel = viewModel
                         if (selectedImageUri != null) {
                             IconButton(
                                 onClick = { ftpViewModel.onSelectedImageUriChange(null) },
-                                modifier = Modifier
-                                    .size(56.dp)
-                                    .background(Color(0xFFC62828), RoundedCornerShape(12.dp))
+                                modifier = Modifier.size(56.dp).background(Color(0xFFC62828), RoundedCornerShape(12.dp))
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = "Delete",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(24.dp)
-                                )
+                                Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete", tint = Color.White, modifier = Modifier.size(24.dp))
                             }
                         }
                     }
 
                     Button(
                         onClick = { ftpViewModel.uploadDepartmentData(context) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 32.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 32.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1B5E20)),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Text(
-                            text = "UPLOAD",
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium,
-                            modifier = Modifier.padding(vertical = 4.dp)
-                        )
+                        Text(text = "UPLOAD", fontSize = 16.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(vertical = 4.dp))
                     }
 
                     if (status == FtpStatus.UPLOADING) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             CircularProgressIndicator(modifier = Modifier.size(24.dp))
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Uploading...",
-                                fontSize = 14.sp,
-                                color = Color(0xFF4A90E2)
-                            )
+                            Text(text = "Uploading...", fontSize = 14.sp, color = Color(0xFF4A90E2))
                         }
                     }
 
                     if (status == FtpStatus.UPLOAD_SUCCESS) {
-                        Text(
-                            text = "Upload successful!",
-                            fontSize = 14.sp,
-                            color = Color.Green
-                        )
+                        Text(text = "Upload successful!", fontSize = 14.sp, color = Color.Green)
                     }
 
                     if (status == FtpStatus.UPLOAD_ERROR) {
-                        Text(
-                            text = "Upload Error: ${errorMessage ?: "Unknown error"}",
-                            fontSize = 14.sp,
-                            color = Color.Red
-                        )
+                        Text(text = "Upload Error: ${errorMessage ?: "Unknown error"}", fontSize = 14.sp, color = Color.Red)
                     }
                 }
             }

@@ -1,7 +1,6 @@
 package com.lasertrac.app
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -29,7 +28,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -38,28 +36,31 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lasertrac.app.db.Violation
+import com.lasertrac.app.db.ViolationDao
 import com.lasertrac.app.ui.theme.TextColorLight
 import com.lasertrac.app.ui.theme.TopBarColor
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ViolationsScreen(onNavigateBack: () -> Unit) {
-    var violations by remember { mutableStateOf(ViolationRepository.violations) }
+fun ViolationsScreen(onNavigateBack: () -> Unit, violationDao: ViolationDao) {
+    val violations by violationDao.getAllViolations().collectAsState(initial = emptyList())
     var showDialog by remember { mutableStateOf(false) }
-    var editingIndex by remember { mutableStateOf(-1) }
-    var actId by remember { mutableStateOf("") }
-    var actName by remember { mutableStateOf("") }
+    var editingViolation by remember { mutableStateOf<Violation?>(null) }
+    val coroutineScope = rememberCoroutineScope()
 
     Scaffold(
         topBar = {
@@ -67,18 +68,12 @@ fun ViolationsScreen(onNavigateBack: () -> Unit) {
                 title = { Text("Violations", color = TextColorLight) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Navigate back",
-                            tint = TextColorLight
-                        )
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = TextColorLight)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = TopBarColor.copy(alpha = 0.9f)
-                )
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = TopBarColor)
             )
-        }
+        },
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -87,7 +82,6 @@ fun ViolationsScreen(onNavigateBack: () -> Unit) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Header with title and ADD NEW button
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -102,9 +96,7 @@ fun ViolationsScreen(onNavigateBack: () -> Unit) {
 
                 Button(
                     onClick = {
-                        actId = ""
-                        actName = ""
-                        editingIndex = -1
+                        editingViolation = null
                         showDialog = true
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -122,7 +114,6 @@ fun ViolationsScreen(onNavigateBack: () -> Unit) {
                 }
             }
 
-            // Violations list
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -131,9 +122,7 @@ fun ViolationsScreen(onNavigateBack: () -> Unit) {
                         violation = violation,
                         index = index + 1,
                         onEditClick = {
-                            actId = violation.actId
-                            actName = violation.actName
-                            editingIndex = index
+                            editingViolation = violation
                             showDialog = true
                         }
                     )
@@ -141,33 +130,24 @@ fun ViolationsScreen(onNavigateBack: () -> Unit) {
             }
         }
 
-        // Add/Edit Dialog
         if (showDialog) {
             ViolationDialog(
-                actId = actId,
-                actName = actName,
-                isEditing = editingIndex >= 0,
-                onActIdChange = { actId = it },
-                onActNameChange = { actName = it },
-                onSave = {
-                    if (actId.isNotBlank() && actName.isNotBlank()) {
-                        if (editingIndex >= 0) {
-                            ViolationRepository.updateViolation(editingIndex, Violation(actId, actName))
+                violation = editingViolation,
+                onDismiss = { showDialog = false },
+                onConfirm = {
+                    coroutineScope.launch {
+                        if (editingViolation == null) {
+                            violationDao.insert(it)
                         } else {
-                            ViolationRepository.addViolation(Violation(actId, actName))
+                            violationDao.update(it)
                         }
-                        violations = ViolationRepository.violations
-                        showDialog = false
                     }
                 },
-                onDelete = {
-                    if (editingIndex >= 0) {
-                        ViolationRepository.removeViolation(editingIndex)
-                        violations = ViolationRepository.violations
-                        showDialog = false
+                 onDelete = {
+                    coroutineScope.launch {
+                       violationDao.deleteViolation(it.id)
                     }
-                },
-                onDismiss = { showDialog = false }
+                }
             )
         }
     }
@@ -199,7 +179,6 @@ fun ViolationItem(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.weight(1f)
             ) {
-                // Index number
                 Box(
                     modifier = Modifier
                         .size(32.dp)
@@ -219,10 +198,9 @@ fun ViolationItem(
 
                 Spacer(modifier = Modifier.width(16.dp))
 
-                // Violation details
                 Column {
                     Text(
-                        text = "${violation.actId} ${violation.actName}",
+                        text = "${violation.title} ${violation.description}",
                         color = Color.White,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Medium
@@ -230,7 +208,6 @@ fun ViolationItem(
                 }
             }
 
-            // Edit button
             IconButton(onClick = onEditClick) {
                 Icon(
                     imageVector = Icons.Default.Edit,
@@ -245,20 +222,19 @@ fun ViolationItem(
 
 @Composable
 fun ViolationDialog(
-    actId: String,
-    actName: String,
-    isEditing: Boolean,
-    onActIdChange: (String) -> Unit,
-    onActNameChange: (String) -> Unit,
-    onSave: () -> Unit,
-    onDelete: () -> Unit,
-    onDismiss: () -> Unit
+    violation: Violation?,
+    onDismiss: () -> Unit,
+    onConfirm: (Violation) -> Unit,
+    onDelete: (Violation) -> Unit
 ) {
+    var title by remember { mutableStateOf(violation?.title ?: "") }
+    var description by remember { mutableStateOf(violation?.description ?: "") }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
             Text(
-                text = if (isEditing) "Edit Act/Violation" else "Add Act/Violation",
+                text = if (violation != null) "Edit Act/Violation" else "Add Act/Violation",
                 color = Color.White,
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold
@@ -269,8 +245,8 @@ fun ViolationDialog(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 OutlinedTextField(
-                    value = actId,
-                    onValueChange = onActIdChange,
+                    value = title,
+                    onValueChange = { title = it },
                     label = { Text("Act ID", color = Color.Gray) },
                     modifier = Modifier.fillMaxWidth(),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -287,8 +263,8 @@ fun ViolationDialog(
                 )
 
                 OutlinedTextField(
-                    value = actName,
-                    onValueChange = onActNameChange,
+                    value = description,
+                    onValueChange = { description = it },
                     label = { Text("Act Name", color = Color.Gray) },
                     modifier = Modifier.fillMaxWidth(),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -309,37 +285,47 @@ fun ViolationDialog(
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                if (isEditing) {
+                if (violation != null) {
                     Button(
-                        onClick = onDelete,
+                        onClick = {
+                            onDelete(violation)
+                            onDismiss()
+                        },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = Color(0xFFD32F2F)
                         ),
                         shape = RoundedCornerShape(8.dp)
                     ) {
-                        Text("Delete", color = Color.White)
+                        Text("Delete")
                     }
                 }
 
                 Button(
-                    onClick = onSave,
+                    onClick = {
+                        val newViolation = violation?.copy(
+                            title = title,
+                            description = description
+                        ) ?: Violation(
+                            title = title,
+                            description = description,
+                            timestamp = System.currentTimeMillis()
+                        )
+                        onConfirm(newViolation)
+                        onDismiss()
+                    },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF1B5E20)
                     ),
-                    shape = RoundedCornerShape(8.dp),
-                    enabled = actId.isNotBlank() && actName.isNotBlank()
+                    shape = RoundedCornerShape(8.dp)
                 ) {
-                    Text("Save", color = Color.White)
+                    Text(if (violation != null) "Update" else "Save")
                 }
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Close", color = Color.Gray)
+                Text("Cancel", color = Color.White)
             }
-        },
-        containerColor = Color(0xFF1E1E1E),
-        titleContentColor = Color.White,
-        textContentColor = Color.White
+        }
     )
 }

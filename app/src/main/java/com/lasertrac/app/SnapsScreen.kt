@@ -1,11 +1,9 @@
 package com.lasertrac.app
 
-import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -68,10 +66,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.core.net.toUri
 import coil.compose.AsyncImage
 import com.lasertrac.app.db.SavedSnapLocationEntity
+import com.lasertrac.app.db.SnapDetail
 import com.lasertrac.app.db.SnapLocationDao
+import com.lasertrac.app.db.SnapStatus
 import com.lasertrac.app.ui.theme.TextColorLight
 import com.lasertrac.app.ui.theme.TopBarColor
 import kotlinx.coroutines.flow.map
@@ -79,9 +78,6 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-
-// DEFINITIVE FIX: The duplicate SnapDetail and SnapStatus classes have been removed from this file.
-// They are now centralized in Model.kt.
 
 fun SavedSnapLocationEntity.toSnapDetail(): SnapDetail {
     val currentDateTimeStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(this.timestamp))
@@ -106,9 +102,9 @@ fun SavedSnapLocationEntity.toSnapDetail(): SnapDetail {
         policeStation = this.selectedPoliceArea ?: "N/A",
         address = this.fullAddress ?: "N/A",
         uploadStatus = "Pending",
-        mainImage = this.imageUri?.toUri() ?: R.drawable.ic_snaps_custom,
-        licensePlateImage = this.imageUri?.toUri() ?: R.drawable.ic_snaps_custom,
-        mapImage = R.drawable.ic_snaps_custom, // Placeholder
+        mainImage = this.imageUri,
+        licensePlateImage = this.imageUri,
+        mapImage = null, // Placeholder
         violationSummary = "", // Placeholder
         violationManagementLink = "", // Placeholder
         accessLink = "", // Placeholder
@@ -116,7 +112,7 @@ fun SavedSnapLocationEntity.toSnapDetail(): SnapDetail {
     )
 }
 
-fun Long.toFormattedDateString(pattern: String = "dd-MM-yyyy"): String {
+private fun Long.toFormattedDateString(pattern: String = "dd-MM-yyyy"): String {
     return SimpleDateFormat(pattern, Locale.getDefault()).format(Date(this))
 }
 

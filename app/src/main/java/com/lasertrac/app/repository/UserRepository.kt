@@ -26,7 +26,7 @@ class UserRepository(
     private val credentialsManager: CredentialsManager
 ) {
 
-    suspend fun login(request: LoginRequest): Result<AuthResponse> = withContext(Dispatchers.IO) {
+    suspend fun login(request: LoginRequest, deviceId: String): Result<AuthResponse> = withContext(Dispatchers.IO) {
         if (!networkTracker.isOnline.first()) {
             return@withContext performOfflineLogin(request)
         }
@@ -46,7 +46,7 @@ class UserRepository(
                             isSynced = true
                         )
                         userDao.insertUser(user)
-                        credentialsManager.saveCredentials(request.email, request.pass)
+                        credentialsManager.saveCredentials(request.email, request.pass, deviceId)
                     }
                     return@withContext Result.success(authResponse)
                 } else {

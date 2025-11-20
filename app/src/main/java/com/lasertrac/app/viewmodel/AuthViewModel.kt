@@ -1,6 +1,8 @@
 package com.lasertrac.app.viewmodel
 
 import android.app.Application
+import android.provider.Settings
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
@@ -21,6 +23,8 @@ import kotlinx.coroutines.launch
 class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     private val userRepository: UserRepository
+    private val credentialsManager: CredentialsManager
+    private val retrofitInstance: RetrofitInstance
 
     // Holds the result for a SUCCESSFUL login only.
     private val _loginSuccess = MutableLiveData<Result<String>?>()
@@ -34,13 +38,17 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     private val _registrationStatus = MutableLiveData<Result<RegistrationStatusResponse>?>()
     val registrationStatus: LiveData<Result<RegistrationStatusResponse>?> = _registrationStatus
 
+    private val _isUserLoggedIn = MutableLiveData<Boolean>()
+    val isUserLoggedIn: LiveData<Boolean> = _isUserLoggedIn
+
     val isOnline: StateFlow<Boolean> = HybridAuthApp.serverStatusChecker.isServerOnline
 
     init {
         val appDatabase = AppDatabase.getDatabase(application)
-        val credentialsManager = CredentialsManager(application)
+        credentialsManager = CredentialsManager(application)
+        retrofitInstance = RetrofitInstance(application.applicationContext)
         userRepository = UserRepository(
-            apiService = RetrofitInstance.api,
+            apiService = retrofitInstance.api,
             userDao = appDatabase.userDao(),
             context = application.applicationContext,
             networkTracker = NetworkStatusTracker(application),
@@ -48,13 +56,29 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    fun checkIfUserIsLoggedIn() {
+        _isUserLoggedIn.value = credentialsManager.isUserLoggedIn()
+    }
+
     fun login(email: String, pass: String) {
         viewModelScope.launch {
-            val result = userRepository.login(LoginRequest(email, pass))
+            val deviceId = Settings.Secure.getString(getApplication<Application>().contentResolver, Settings.Secure.ANDROID_ID)
+            Log.d("AuthViewModel", "Device ID: $deviceId")
+            val result = userRepository.login(LoginRequest(email, pass), deviceId)
             result.fold(
-                onSuccess = { _loginSuccess.postValue(Result.success(it.message)) },
+                onSuccess = {
+                    credentialsManager.saveCredentials(email, pass, deviceId)
+                    _loginSuccess.postValue(Result.success(it.message))
+                },
                 onFailure = { _loginSuccess.postValue(Result.failure(it)) } // Post failure to the same LiveData
             )
+        }
+    }
+
+    fun logout() {
+        viewModelScope.launch {
+            credentialsManager.clearCredentials()
+            _isUserLoggedIn.postValue(false)
         }
     }
 
@@ -82,7 +106,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     fun checkRegistrationStatus(email: String) {
         viewModelScope.launch {
             try {
-                val response = RetrofitInstance.api.checkRegistrationStatus(email)
+                val response = retrofitInstance.api.checkRegistrationStatus(email)
                 if (response.isSuccessful && response.body() != null) {
                     _registrationStatus.postValue(Result.success(response.body()!!))
                 } else {

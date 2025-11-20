@@ -17,7 +17,7 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) : Coroutin
         // Added a new log message to ensure this file is updated
         Log.d("SyncWorker(work)", "SYNCWORKER (WORK) - EXECUTING DEFINITIVE LOGIC")
         val userDao = AppDatabase.getDatabase(applicationContext).userDao()
-        val apiService = RetrofitInstance.api
+        val apiService = RetrofitInstance(applicationContext).api
 
         val unsyncedUsers = userDao.getUnsyncedUsers()
 

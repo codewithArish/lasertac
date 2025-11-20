@@ -20,9 +20,9 @@ interface UserDao {
     @Delete
     suspend fun deleteUser(user: User)
 
-    @Query("SELECT * FROM users WHERE email = :email LIMIT 1")
+    @Query("SELECT * FROM app_users WHERE email = :email LIMIT 1")
     fun getUserByEmail(email: String): Flow<User?>
 
-    @Query("SELECT * FROM users WHERE isSynced = 0")
+    @Query("SELECT * FROM app_users WHERE isSynced = 0")
     fun getUnsyncedUsers(): List<User>
 }

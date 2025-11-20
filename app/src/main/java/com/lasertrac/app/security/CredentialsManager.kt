@@ -69,10 +69,11 @@ class CredentialsManager(context: Context) {
     }
 
     // All public methods must now be null-safe.
-    fun saveCredentials(email: String, pass: String) {
+    fun saveCredentials(email: String, pass: String, deviceId: String) {
         encryptedPrefs?.edit()?.apply {
             putString("EMAIL_KEY", email)
             putString("PASSWORD_KEY", pass)
+            putString("DEVICE_ID_KEY", deviceId)
             apply()
         }
     }
@@ -81,11 +82,20 @@ class CredentialsManager(context: Context) {
     
     fun getSavedPassword(): String? = encryptedPrefs?.getString("PASSWORD_KEY", null)
 
+    fun getSavedDeviceId(): String? = encryptedPrefs?.getString("DEVICE_ID_KEY", null)
+
     fun clearCredentials() {
         encryptedPrefs?.edit()?.apply {
             remove("EMAIL_KEY")
             remove("PASSWORD_KEY")
+            remove("DEVICE_ID_KEY")
             apply()
         }
+    }
+
+    fun isUserLoggedIn(): Boolean {
+        val email = encryptedPrefs?.getString("EMAIL_KEY", null)
+        val password = encryptedPrefs?.getString("PASSWORD_KEY", null)
+        return !email.isNullOrEmpty() && !password.isNullOrEmpty()
     }
 }

@@ -16,7 +16,7 @@ class SyncWorker(appContext: Context, workerParams: WorkerParameters) : Coroutin
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
         Log.d("SyncWorker", "Starting background sync from the correct worker...")
         val userDao = AppDatabase.getDatabase(applicationContext).userDao()
-        val apiService = RetrofitInstance.api
+        val apiService = RetrofitInstance(applicationContext).api
 
         val unsyncedUsers = userDao.getUnsyncedUsers()
 

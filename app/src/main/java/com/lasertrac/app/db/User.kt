@@ -3,9 +3,9 @@ package com.lasertrac.app.db
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "users")
+@Entity(tableName = "app_users")
 data class User(
-    @PrimaryKey(autoGenerate = true) val pk: Int = 0,
+    @PrimaryKey
     val serverId: Int = 0,
     val name: String,
     val email: String,

@@ -4,13 +4,13 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 
 /**
- * Represents a saved location, now with detailed address fields.
+ * Represents a saved location, as it was before my changes.
  */
 @Entity(tableName = "saved_snap_location")
 data class SavedSnapLocationEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
-    val snapId: String,
+    val snapId: String, // Reverted from Int back to String.
     val latitude: Double? = null,
     val longitude: Double? = null,
     val timestamp: Long,
