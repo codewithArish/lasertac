@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -28,10 +29,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayCircleOutline
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -66,9 +65,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lasertrac.app.db.SnapStatus
 import com.lasertrac.app.ui.theme.Lasertac2Theme
 import com.lasertrac.app.ui.theme.TextColorLight
 import com.lasertrac.app.ui.theme.TopBarColor
+import com.lasertrac.app.utils.toFormattedDateString
 
 data class VideoDetail(
     val id: String,
@@ -338,16 +339,15 @@ private fun SelectionTopAppBar(
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = TopBarColor.copy(alpha = 0.9f)
+            containerColor = MaterialTheme.colorScheme.secondary
         )
     )
 }
 
-
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun VideoCard(
-    videoDetail: VideoDetail, 
+private fun VideoCard(
+    videoDetail: VideoDetail,
     isSelected: Boolean,
     selectionMode: Boolean,
     onClick: () -> Unit,
@@ -360,74 +360,78 @@ fun VideoCard(
                 onClick = onClick,
                 onLongClick = onLongClick
             ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        colors = CardDefaults.cardColors(containerColor = if(isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant),
-        border = BorderStroke(2.dp, if (isSelected) MaterialTheme.colorScheme.primary else videoDetail.status.color)
+        shape = MaterialTheme.shapes.medium,
+        border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Row(
-            modifier = Modifier.padding(8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)),
+                contentAlignment = Alignment.Center
+            ) {
                 Image(
                     painter = painterResource(id = videoDetail.thumbnailResId),
-                    contentDescription = "Thumbnail of ${videoDetail.regNr}",
-                    modifier = Modifier.size(width = 100.dp, height = 56.dp).clip(MaterialTheme.shapes.small),
+                    contentDescription = "Video thumbnail",
+                    modifier = Modifier.fillMaxSize(), // Fills the circle
                     contentScale = ContentScale.Crop
                 )
-                Icon(Icons.Default.PlayCircleOutline, contentDescription = "Play Video", tint=Color.White.copy(alpha=0.8f), modifier = Modifier.size(32.dp))
-            }
-            
-            Spacer(modifier = Modifier.padding(8.dp))
 
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.Center
-            ) {
+                if (selectionMode) {
+                    Checkbox(
+                        checked = isSelected, 
+                        onCheckedChange = null // Click is handled by the Card
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.PlayCircleOutline,
+                        contentDescription = "Play Video",
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = videoDetail.regNr,
-                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    style = MaterialTheme.typography.bodyLarge
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = videoDetail.dateTime.substringBefore(" "),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                    text = videoDetail.dateTime,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )
             }
-            
-            if (selectionMode) {
-                Checkbox(checked = isSelected, onCheckedChange = { onClick() })
-            } else {
-                 Text(
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
                     text = videoDetail.duration,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
                 )
+                Spacer(modifier = Modifier.height(4.dp))
+                Box(modifier = Modifier.background(videoDetail.status.color, CircleShape).padding(horizontal = 8.dp, vertical = 4.dp)) {
+                    Text(videoDetail.status.displayName, color = Color.White, fontSize = 10.sp)
+                }
             }
         }
     }
 }
 
-@Preview(showBackground = true, device = "id:pixel_6")
+@Preview(showBackground = true)
 @Composable
 fun VideosScreenPreview() {
     Lasertac2Theme {
         VideosScreen(onNavigateBack = {})
-    }
-}
-
-@Preview(showBackground = true, widthDp = 400)
-@Composable
-fun VideoCardPreview() {
-    Lasertac2Theme {
-        val dummyVideo = remember {
-            VideoDetail("1", R.drawable.ic_videos_custom, "KA01XY1234", "2024-05-21 01:30 PM", "1:25", "2024-05-21", SnapStatus.PENDING)
-        }
-        Box(modifier = Modifier.padding(8.dp).background(MaterialTheme.colorScheme.background)){
-            VideoCard(videoDetail = dummyVideo, isSelected = false, selectionMode = false, onClick={}, onLongClick = {})
-        }
     }
 }

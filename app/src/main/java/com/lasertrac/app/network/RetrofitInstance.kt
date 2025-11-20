@@ -1,37 +1,34 @@
 package com.lasertrac.app.network
 
+import android.content.Context
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 
-/**
- * Singleton object to provide a configured Retrofit instance.
- */
-object RetrofitInstance {
+class RetrofitInstance(context: Context) {
+    // Use 10.0.2.2 to connect to the host machine's localhost from the Android Emulator.
+    //192.168.1.3
+    companion object {
+        private const val BASE_URL = "http://10.0.2.2/myapi/"
+    }
 
-    // TODO: Replace with your actual base URL. It must end with a '/'.
-    private const val BASE_URL = "https://api.example.com/"
+    private val logging = HttpLoggingInterceptor().apply {
+        level = HttpLoggingInterceptor.Level.BODY
+    }
 
-    /**
-     * A lazy-initialized Retrofit service instance.
-     */
+    private val authInterceptor = AuthInterceptor(context.applicationContext)
+
+    private val client = OkHttpClient.Builder()
+        .addInterceptor(logging)
+        .addInterceptor(authInterceptor)
+        .build()
+
     val api: ApiService by lazy {
-        // Create a logging interceptor to see request and response logs
-        val logging = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
-        }
-
-        // Configure OkHttp client with the logging interceptor
-        val client = OkHttpClient.Builder()
-            .addInterceptor(logging)
-            .build()
-
-        // Build the Retrofit instance
         Retrofit.Builder()
             .baseUrl(BASE_URL)
             .client(client)
-            .addConverterFactory(GsonConverterFactory.create()) // Use Gson for JSON serialization/deserialization
+            .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(ApiService::class.java)
     }

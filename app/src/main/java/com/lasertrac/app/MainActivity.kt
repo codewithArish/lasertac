@@ -12,19 +12,44 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberDrawerState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
@@ -35,31 +60,21 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lasertrac.app.db.AppDatabase
-import com.lasertrac.app.db.SnapLocationDao
+import com.lasertrac.app.ui.AuthScreen
+import com.lasertrac.app.ui.theme.DashboardIconCircleBg
 import com.lasertrac.app.ui.theme.Lasertac2Theme
-import com.lasertrac.app.ui.theme.TextColorLight 
-import com.lasertrac.app.ui.theme.DashboardIconCircleBg 
+import com.lasertrac.app.ui.theme.TextColorLight
 import kotlinx.coroutines.launch
 
-// Updated Screen identifiers for navigation
 enum class Screen {
-    Login,
-    CreateAccount,
-    Dashboard,
-    Settings,
-    Snaps,
-    Videos,
-    FTP,
-    DeviceId, 
-    Location, 
-    Violations, 
-    Reports 
+    Dashboard, Settings, Videos, FTP, DeviceId, Violations, Reports, Snaps
 }
 
 data class FeatureGridItemData(
     val title: String,
-    @DrawableRes val iconResId: Int, 
+    @DrawableRes val iconResId: Int,
     val iconBackgroundColor: Color,
     val onClick: () -> Unit
 )
@@ -70,131 +85,111 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         val appDb = AppDatabase.getDatabase(applicationContext)
-        val snapLocationDao = appDb.snapLocationDao()
 
         setContent {
             Lasertac2Theme {
-                var currentScreen by remember { mutableStateOf(Screen.Login) }
+                var currentScreen by remember { mutableStateOf(Screen.Dashboard) }
                 var isLoggedIn by remember { mutableStateOf(false) }
 
-                // If not logged in, always show the auth screens
                 if (!isLoggedIn) {
-                    when (currentScreen) {
-                        Screen.Login -> LoginScreen(
-                            onLoginSuccess = { 
-                                isLoggedIn = true 
-                                currentScreen = Screen.Dashboard 
-                            },
-                            onNavigateToCreateAccount = { currentScreen = Screen.CreateAccount }
-                        )
-                        Screen.CreateAccount -> CreateAccountScreen(
-                            onAccountCreated = { currentScreen = Screen.Login },
-                            onNavigateBackToLogin = { currentScreen = Screen.Login }
-                        )
-                        // All other screens default to Login if not authenticated
-                        else -> {
-                             LoginScreen(
-                                onLoginSuccess = { 
-                                    isLoggedIn = true 
-                                    currentScreen = Screen.Dashboard 
-                                },
-                                onNavigateToCreateAccount = { currentScreen = Screen.CreateAccount }
-                            )
+                    AuthScreen(onLoginSuccess = { isLoggedIn = true })
+                } else {
+                    val logout = {
+                        isLoggedIn = false
+                        currentScreen = Screen.Dashboard // Reset to dashboard on logout
+                    }
+                    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+                    val scope = rememberCoroutineScope()
+
+                    BackHandler(enabled = drawerState.isOpen) {
+                        scope.launch { drawerState.close() }
+                    }
+
+                    ModalNavigationDrawer(
+                        drawerState = drawerState,
+                        drawerContent = {
+                            ModalDrawerSheet {
+                                Spacer(Modifier.height(12.dp))
+                                NavigationDrawerItem(
+                                    icon = { Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Logout") },
+                                    label = { Text("Logout") },
+                                    selected = false,
+                                    onClick = {
+                                        scope.launch { drawerState.close() }
+                                        logout()
+                                    }
+                                )
+                            }
+                        },
+                        content = {
+                            when (currentScreen) {
+                                Screen.Dashboard -> MainDashboardScreen(
+                                    onMenuClick = { scope.launch { drawerState.open() } },
+                                    onNavigateTo = { screen -> currentScreen = screen }
+                                )
+                                Screen.Settings -> SettingsScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
+                                Screen.Videos -> VideosScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
+                                Screen.FTP -> {
+                                     val ftpViewModel: FTPViewModel = viewModel(factory = FTPViewModelFactory(appDb.snapLocationDao()))
+                                    FTPScreen(
+                                        onNavigateBack = { currentScreen = Screen.Dashboard },
+                                        ftpViewModel = ftpViewModel
+                                    )
+                                }
+                                Screen.DeviceId -> DeviceIdScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
+                                Screen.Violations -> ViolationsScreen(
+                                    onNavigateBack = { currentScreen = Screen.Dashboard },
+                                    violationDao = appDb.violationDao()
+                                )
+                                Screen.Reports -> ReportsScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
+                                Screen.Snaps -> SnapsScreen(
+                                    onNavigateBack = { currentScreen = Screen.Dashboard },
+                                    snapLocationDao = appDb.snapLocationDao()
+                                )
+                            }
                         }
-                    }
-                } else { // User is logged in, show the main app content
-                    BackHandler(enabled = true) {
-                        if (currentScreen != Screen.Dashboard) {
-                            currentScreen = Screen.Dashboard
-                        } else {
-                            // On dashboard, pressing back will exit the app
-                            finishAffinity()
-                        }
-                    }
-                    
-                    when (currentScreen) {
-                        Screen.Dashboard -> MainDashboardScreen(
-                            onNavigateToSettings = { currentScreen = Screen.Settings },
-                            onNavigateToSnaps = { currentScreen = Screen.Snaps },
-                            onNavigateToVideos = { currentScreen = Screen.Videos },
-                            onNavigateToFTP = { currentScreen = Screen.FTP },
-                            onNavigateToDeviceId = { currentScreen = Screen.DeviceId },
-                            onNavigateToLocation = { currentScreen = Screen.Location },
-                            onNavigateToViolations = { currentScreen = Screen.Violations },
-                            onNavigateToReports = { currentScreen = Screen.Reports }
-                        )
-                        Screen.Settings -> SettingsScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
-                        Screen.Snaps -> SnapsScreen(onNavigateBack = { currentScreen = Screen.Dashboard }, snapLocationDao = snapLocationDao)
-                        Screen.Videos -> VideosScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
-                        Screen.FTP -> FTPScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
-                        Screen.DeviceId -> DeviceIdScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
-                        Screen.Location -> LocationScreen(onNavigateBack = { currentScreen = Screen.Dashboard }, snapId = "current_device_location", snapLocationDao = snapLocationDao)
-                        Screen.Violations -> ViolationsScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
-                        Screen.Reports -> ReportsScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
-                        else -> MainDashboardScreen(
-                            onNavigateToSettings = { currentScreen = Screen.Settings },
-                            onNavigateToSnaps = { currentScreen = Screen.Snaps },
-                            onNavigateToVideos = { currentScreen = Screen.Videos },
-                            onNavigateToFTP = { currentScreen = Screen.FTP },
-                            onNavigateToDeviceId = { currentScreen = Screen.DeviceId },
-                            onNavigateToLocation = { currentScreen = Screen.Location },
-                            onNavigateToViolations = { currentScreen = Screen.Violations },
-                            onNavigateToReports = { currentScreen = Screen.Reports }
-                        )
-                    }
+                    )
                 }
             }
         }
     }
 }
 
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainDashboardScreen(
-    onNavigateToSettings: () -> Unit,
-    onNavigateToSnaps: () -> Unit,
-    onNavigateToVideos: () -> Unit,
-    onNavigateToFTP: () -> Unit,
-    onNavigateToDeviceId: () -> Unit,
-    onNavigateToLocation: () -> Unit,
-    onNavigateToViolations: () -> Unit,
-    onNavigateToReports: () -> Unit
+    onMenuClick: () -> Unit,
+    onNavigateTo: (Screen) -> Unit
 ) {
     val features = listOf(
-        FeatureGridItemData("Snaps", R.drawable.ic_snaps_custom, DashboardIconCircleBg) { onNavigateToSnaps() },
-        FeatureGridItemData("Videos", R.drawable.ic_videos_custom, DashboardIconCircleBg) { onNavigateToVideos() },
-        FeatureGridItemData("Settings", R.drawable.ic_settings_custom, DashboardIconCircleBg) { onNavigateToSettings() },
-        FeatureGridItemData("FTP", R.drawable.ic_ftp_custom, DashboardIconCircleBg) { onNavigateToFTP() },
-        FeatureGridItemData("Device ID", R.drawable.ic_device_id_custom, DashboardIconCircleBg) { onNavigateToDeviceId() },
-        FeatureGridItemData("Location", R.drawable.ic_location_custom, DashboardIconCircleBg) { onNavigateToLocation() },
-        FeatureGridItemData("Violations", R.drawable.ic_violations_custom, DashboardIconCircleBg) { onNavigateToViolations() },
-        FeatureGridItemData("Reports", R.drawable.ic_reports_custom, DashboardIconCircleBg) { onNavigateToReports() }
+        FeatureGridItemData("Snaps", R.drawable.ic_snaps_custom, DashboardIconCircleBg) { onNavigateTo(Screen.Snaps) },
+        FeatureGridItemData("Videos", R.drawable.ic_videos_custom, DashboardIconCircleBg) { onNavigateTo(Screen.Videos) },
+        FeatureGridItemData("Settings", R.drawable.ic_settings_custom, DashboardIconCircleBg) { onNavigateTo(Screen.Settings) },
+        FeatureGridItemData("FTP", R.drawable.ic_ftp_custom, DashboardIconCircleBg) { onNavigateTo(Screen.FTP) },
+        FeatureGridItemData("Device ID", R.drawable.ic_device_id_custom, DashboardIconCircleBg) { onNavigateTo(Screen.DeviceId) },
+        FeatureGridItemData("Violations", R.drawable.ic_violations_custom, DashboardIconCircleBg) { onNavigateTo(Screen.Violations) },
+        FeatureGridItemData("Reports", R.drawable.ic_reports_custom, DashboardIconCircleBg) { onNavigateTo(Screen.Reports) }
     )
 
     Scaffold(
-        containerColor = Color.Transparent, 
+        containerColor = Color.Transparent,
         topBar = {
-            TopAppBar( 
-                title = {
-                    Text("Home", color = TextColorLight, fontWeight = FontWeight.Bold)
-                },
+            TopAppBar(
+                title = { },
                 navigationIcon = {
                     Box(
                         modifier = Modifier
-                            .size(48.dp) 
+                            .size(48.dp)
                             .clip(CircleShape)
                             .background(DashboardIconCircleBg),
                         contentAlignment = Alignment.Center
                     ) {
-                        IconButton(onClick = { /* TODO: Handle navigation drawer */ }) {
+                        IconButton(onClick = onMenuClick) {
                             Icon(Icons.Filled.Menu, contentDescription = "Menu", tint = TextColorLight)
                         }
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent 
-                )
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
         },
     ) { innerPadding ->
@@ -202,9 +197,7 @@ fun MainDashboardScreen(
             Image(
                 painter = painterResource(id = R.drawable.dashboard_background_device),
                 contentDescription = "Dashboard Background",
-                modifier = Modifier
-                    .fillMaxSize()
-                    .blur(radius = 4.dp),
+                modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
             )
 
@@ -218,16 +211,14 @@ fun MainDashboardScreen(
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 16.dp), 
+                        .padding(vertical = 16.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Image(
                         painter = painterResource(id = R.drawable.lasertrac_logo_banner),
                         contentDescription = "LaserTrac Logo Banner",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(72.dp),
-                        contentScale = ContentScale.Crop 
+                        modifier = Modifier.fillMaxWidth().height(72.dp),
+                        contentScale = ContentScale.Crop
                     )
                 }
 
@@ -276,12 +267,11 @@ fun FeatureGridButton(item: FeatureGridItemData) {
 
     Column(
         modifier = Modifier
-            .scale(scale.value) 
-            .clickable {
-                scope.launch {
-                     scale.animateTo(1.15f, animationSpec = tween(durationMillis = 100))
+            .scale(scale.value)
+            .clickable {                scope.launch {
+                    scale.animateTo(1.15f, animationSpec = tween(durationMillis = 100))
                     scale.animateTo(1f, animationSpec = tween(durationMillis = 100))
-                    item.onClick() 
+                    item.onClick()
                 }
             }
             .padding(8.dp),
@@ -291,15 +281,8 @@ fun FeatureGridButton(item: FeatureGridItemData) {
         Box(
             modifier = Modifier
                 .size(68.dp)
-                .background(
-                    color = item.iconBackgroundColor, 
-                    shape = CircleShape
-                )
-                .border(
-                    width = 1.dp,
-                    color = Color.White.copy(alpha = 0.4f),
-                    shape = CircleShape
-                ),
+                .background(color = item.iconBackgroundColor, shape = CircleShape)
+                .border(width = 1.dp, color = Color.White.copy(alpha = 0.4f), shape = CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Image(
@@ -332,14 +315,8 @@ fun MainDashboardScreenPreview_New() {
     Lasertac2Theme {
         Box(modifier = Modifier.background(Color(0xFF42475A))) {
             MainDashboardScreen(
-                onNavigateToSettings = {},
-                onNavigateToSnaps = {},
-                onNavigateToVideos = {},
-                onNavigateToFTP = {},
-                onNavigateToDeviceId = {},
-                onNavigateToLocation = {},
-                onNavigateToViolations = {},
-                onNavigateToReports = {}
+                onMenuClick = {},
+                onNavigateTo = {}
             )
         }
     }

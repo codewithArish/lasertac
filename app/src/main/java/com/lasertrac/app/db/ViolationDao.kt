@@ -1,25 +1,23 @@
 package com.lasertrac.app.db
 
 import androidx.room.Dao
-import androidx.room.Delete
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ViolationDao {
-    @Query("SELECT * FROM violations ORDER BY id ASC")
-    fun getAllViolations(): Flow<List<ViolationEntity>>
-
-    @Insert
-    suspend fun insertViolation(violation: ViolationEntity): Long
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(violation: Violation)
 
     @Update
-    suspend fun updateViolation(violation: ViolationEntity)
+    suspend fun update(violation: Violation)
 
-    @Delete
-    suspend fun deleteViolation(violation: ViolationEntity)
+    @Query("SELECT * FROM violations")
+    fun getAllViolations(): Flow<List<Violation>>
+
+    @Query("DELETE FROM violations WHERE id = :violationId")
+    suspend fun deleteViolation(violationId: Int)
 }
-
-
