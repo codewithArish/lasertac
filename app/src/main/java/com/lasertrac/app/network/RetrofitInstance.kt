@@ -8,9 +8,9 @@ import retrofit2.converter.gson.GsonConverterFactory
 
 class RetrofitInstance(context: Context) {
     // Use 10.0.2.2 to connect to the host machine's localhost from the Android Emulator.
-    //192.168.1.3
+    //192.168.1.22
     companion object {
-        private const val BASE_URL = "http://10.0.2.2/myapi/"
+        private const val BASE_URL = "http://192.168.1.22/myapi/"
     }
 
     private val logging = HttpLoggingInterceptor().apply {

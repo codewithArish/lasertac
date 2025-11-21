@@ -66,10 +66,11 @@ import com.lasertrac.app.ui.AuthScreen
 import com.lasertrac.app.ui.theme.DashboardIconCircleBg
 import com.lasertrac.app.ui.theme.Lasertac2Theme
 import com.lasertrac.app.ui.theme.TextColorLight
+import com.lasertrac.app.util.SessionManager
 import kotlinx.coroutines.launch
 
 enum class Screen {
-    Dashboard, Settings, Videos, FTP, DeviceId, Violations, Reports, Snaps
+    Login, Dashboard, Settings, Videos, FTP, DeviceId, Violations, Reports, Snaps
 }
 
 data class FeatureGridItemData(
@@ -85,70 +86,74 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         val appDb = AppDatabase.getDatabase(applicationContext)
+        val sessionManager = SessionManager(applicationContext)
 
         setContent {
             Lasertac2Theme {
-                var currentScreen by remember { mutableStateOf(Screen.Dashboard) }
-                var isLoggedIn by remember { mutableStateOf(false) }
+                val startScreen = if (sessionManager.isLoggedIn()) Screen.Dashboard else Screen.Login
+                var currentScreen by remember { mutableStateOf(startScreen) }
 
-                if (!isLoggedIn) {
-                    AuthScreen(onLoginSuccess = { isLoggedIn = true })
-                } else {
-                    val logout = {
-                        isLoggedIn = false
-                        currentScreen = Screen.Dashboard // Reset to dashboard on logout
-                    }
-                    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
-                    val scope = rememberCoroutineScope()
+                when (currentScreen) {
+                    Screen.Login -> AuthScreen(onLoginSuccess = { currentScreen = Screen.Dashboard })
+                    else -> {
+                        val logout = {
+                            sessionManager.clearSession()
+                            currentScreen = Screen.Login
+                        }
+                        val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+                        val scope = rememberCoroutineScope()
 
-                    BackHandler(enabled = drawerState.isOpen) {
-                        scope.launch { drawerState.close() }
-                    }
+                        BackHandler(enabled = drawerState.isOpen) {
+                            scope.launch { drawerState.close() }
+                        }
 
-                    ModalNavigationDrawer(
-                        drawerState = drawerState,
-                        drawerContent = {
-                            ModalDrawerSheet {
-                                Spacer(Modifier.height(12.dp))
-                                NavigationDrawerItem(
-                                    icon = { Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Logout") },
-                                    label = { Text("Logout") },
-                                    selected = false,
-                                    onClick = {
-                                        scope.launch { drawerState.close() }
-                                        logout()
-                                    }
-                                )
-                            }
-                        },
-                        content = {
-                            when (currentScreen) {
-                                Screen.Dashboard -> MainDashboardScreen(
-                                    onMenuClick = { scope.launch { drawerState.open() } },
-                                    onNavigateTo = { screen -> currentScreen = screen }
-                                )
-                                Screen.Settings -> SettingsScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
-                                Screen.Videos -> VideosScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
-                                Screen.FTP -> {
-                                     val ftpViewModel: FTPViewModel = viewModel(factory = FTPViewModelFactory(appDb.snapLocationDao()))
-                                    FTPScreen(
-                                        onNavigateBack = { currentScreen = Screen.Dashboard },
-                                        ftpViewModel = ftpViewModel
+                        ModalNavigationDrawer(
+                            drawerState = drawerState,
+                            drawerContent = {
+                                ModalDrawerSheet {
+                                    Spacer(Modifier.height(12.dp))
+                                    NavigationDrawerItem(
+                                        icon = { Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Logout") },
+                                        label = { Text("Logout") },
+                                        selected = false,
+                                        onClick = {
+                                            scope.launch { drawerState.close() }
+                                            logout()
+                                        }
                                     )
                                 }
-                                Screen.DeviceId -> DeviceIdScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
-                                Screen.Violations -> ViolationsScreen(
-                                    onNavigateBack = { currentScreen = Screen.Dashboard },
-                                    violationDao = appDb.violationDao()
-                                )
-                                Screen.Reports -> ReportsScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
-                                Screen.Snaps -> SnapsScreen(
-                                    onNavigateBack = { currentScreen = Screen.Dashboard },
-                                    snapLocationDao = appDb.snapLocationDao()
-                                )
+                            },
+                            content = {
+                                when (currentScreen) {
+                                    Screen.Dashboard -> MainDashboardScreen(
+                                        onMenuClick = { scope.launch { drawerState.open() } },
+                                        onNavigateTo = { screen -> currentScreen = screen }
+                                    )
+                                    Screen.Settings -> SettingsScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
+                                    Screen.Videos -> VideosScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
+                                    Screen.FTP -> {
+                                        val ftpViewModel: FTPViewModel = viewModel(factory = FTPViewModelFactory(appDb.snapLocationDao()))
+                                        FTPScreen(
+                                            onNavigateBack = { currentScreen = Screen.Dashboard },
+                                            ftpViewModel = ftpViewModel
+                                        )
+                                    }
+                                    Screen.DeviceId -> DeviceIdScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
+                                    Screen.Violations -> ViolationsScreen(
+                                        onNavigateBack = { currentScreen = Screen.Dashboard },
+                                        violationDao = appDb.violationDao()
+                                    )
+                                    Screen.Reports -> ReportsScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
+                                    Screen.Snaps -> SnapsScreen(
+                                        onNavigateBack = { currentScreen = Screen.Dashboard },
+                                        snapLocationDao = appDb.snapLocationDao()
+                                    )
+
+                                    Screen.Login -> {}
+                                }
                             }
-                        }
-                    )
+                        )
+                    }
                 }
             }
         }

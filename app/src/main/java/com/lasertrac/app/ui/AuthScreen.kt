@@ -44,7 +44,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -62,7 +61,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lasertrac.app.R
+import com.lasertrac.app.util.SessionManager
 import com.lasertrac.app.viewmodel.AuthViewModel
+import com.lasertrac.app.viewmodel.LoginState
 import kotlinx.coroutines.delay
 
 private sealed class AuthScreenState {
@@ -76,71 +77,35 @@ fun AuthScreen(
     onLoginSuccess: () -> Unit
 ) {
     val context = LocalContext.current
+    val sessionManager = remember { SessionManager(context) }
 
     var screenState by remember { mutableStateOf<AuthScreenState>(AuthScreenState.Idle) }
     var name by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
-    var passwordVisible by remember { mutableStateOf(false) } // Corrected mutableStateOf
+    var passwordVisible by remember { mutableStateOf(false) }
     var isLoginMode by remember { mutableStateOf(true) }
 
-    var isAuthLoading by remember { mutableStateOf(false) }
-    var isStatusCheckLoading by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-
-    val loginResult by authViewModel.loginSuccess.observeAsState()
-    val registrationPendingResult by authViewModel.registrationPending.observeAsState()
-    val registrationStatusResult by authViewModel.registrationStatus.observeAsState()
+    val loginState by authViewModel.loginState.collectAsState()
     val isOnline by authViewModel.isOnline.collectAsState()
 
-    LaunchedEffect(loginResult) {
-        loginResult?.let { result ->
-            isAuthLoading = false
-            result.fold(
-                onSuccess = { successMessage ->
-                    Toast.makeText(context, successMessage, Toast.LENGTH_SHORT).show() // Correctly use the successMessage String
-                    onLoginSuccess()
-                },
-                onFailure = { error ->
-                    errorMessage = error.message
-                }
-            )
-            authViewModel.resetAllEvents()
-        }
-    }
-
-    LaunchedEffect(registrationPendingResult) {
-        registrationPendingResult?.let {
-            isAuthLoading = false
-            it.fold(
-                onSuccess = { message ->
-                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+    LaunchedEffect(loginState) {
+        when (val state = loginState) {
+            is LoginState.Success -> {
+                Toast.makeText(context, state.message, Toast.LENGTH_LONG).show()
+                if (state.message.contains("Verification required", ignoreCase = true) || state.message.contains("queued", ignoreCase = true)) {
                     screenState = AuthScreenState.AwaitingVerification(email, password)
-                },
-                onFailure = { /* Not used in this flow */ }
-            )
-            authViewModel.resetAllEvents()
-        }
-    }
-
-    LaunchedEffect(registrationStatusResult) {
-        registrationStatusResult?.let {
-            isStatusCheckLoading = false
-            it.fold(
-                onSuccess = { response ->
-                    if (response.status == "verified") {
-                        val currentState = screenState
-                        if (currentState is AuthScreenState.AwaitingVerification) {
-                            Toast.makeText(context, "Verification successful! Logging in...", Toast.LENGTH_LONG).show()
-                            isAuthLoading = true
-                            authViewModel.login(currentState.email, currentState.pass)
-                        }
-                    }
-                },
-                onFailure = { error ->
-                    Toast.makeText(context, "Status Check Failed: ${error.message}", Toast.LENGTH_SHORT).show()
+                } else {
+                    sessionManager.saveLoginSession()
+                    onLoginSuccess()
                 }
-            )
+                authViewModel.resetLoginState() // Reset after handling
+            }
+            is LoginState.Error -> {
+                Toast.makeText(context, state.message, Toast.LENGTH_SHORT).show()
+                authViewModel.resetLoginState()
+            }
+            else -> { /* Handle Idle and Loading as needed, often by showing/hiding a spinner */ }
         }
     }
 
@@ -149,11 +114,8 @@ fun AuthScreen(
         PendingVerificationDialog(
             email = state.email,
             onDismiss = { screenState = AuthScreenState.Idle },
-            onCheckStatus = {
-                isStatusCheckLoading = true
-                authViewModel.checkRegistrationStatus(state.email)
-            },
-            isLoading = isStatusCheckLoading
+            onCheckStatus = { authViewModel.checkRegistrationStatus(state.email) },
+            isLoading = loginState is LoginState.Loading
         )
     }
 
@@ -226,15 +188,13 @@ fun AuthScreen(
                     GradientButton(
                         text = if (isLoginMode) "Login" else "Register",
                         onClick = {
-                            isAuthLoading = true
-                            errorMessage = null
                             if (isLoginMode) {
                                 authViewModel.login(email, password)
                             } else {
                                 authViewModel.register(name, email, password)
                             }
                         },
-                        enabled = !isAuthLoading
+                        enabled = loginState !is LoginState.Loading
                     )
                     Spacer(modifier = Modifier.height(24.dp))
 
@@ -245,9 +205,10 @@ fun AuthScreen(
                         fontWeight = FontWeight.Bold
                     )
 
-                    errorMessage?.let {
+                    if (loginState is LoginState.Error) {
+                        val errorState = loginState as LoginState.Error
                         Spacer(modifier = Modifier.height(16.dp))
-                        Text(it, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
+                        Text(errorState.message, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
                     }
                 }
             }
@@ -260,7 +221,7 @@ fun AuthScreen(
                 .padding(16.dp)
         )
 
-        if (isAuthLoading) {
+        if (loginState is LoginState.Loading) {
             CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
         }
     }
@@ -276,7 +237,7 @@ fun PendingVerificationDialog(
     LaunchedEffect(email) {
         while (true) {
             onCheckStatus()
-            delay(15000)
+            delay(15000) // Check every 15 seconds
         }
     }
 

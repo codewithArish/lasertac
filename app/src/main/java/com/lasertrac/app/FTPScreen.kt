@@ -54,6 +54,9 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 import coil.compose.rememberAsyncImagePainter
 import com.lasertrac.app.ui.theme.TextColorLight
 import com.lasertrac.app.ui.theme.TopBarColor
@@ -62,6 +65,7 @@ import com.lasertrac.app.ui.theme.TopBarColor
 @Composable
 fun FTPScreen(onNavigateBack: () -> Unit, ftpViewModel: FTPViewModel) {
     val context = LocalContext.current
+    val workManager = WorkManager.getInstance(context)
 
     val ftpServer by ftpViewModel.ftpServer.collectAsState()
     val ftpPort by ftpViewModel.ftpPort.collectAsState()
@@ -154,14 +158,26 @@ fun FTPScreen(onNavigateBack: () -> Unit, ftpViewModel: FTPViewModel) {
                             )
                         }
                         Button(
-                            onClick = { ftpViewModel.syncSnaps(context) },
+                            onClick = {
+                                val ftpData = workDataOf(
+                                    FTPWorker.KEY_SERVER to ftpServer,
+                                    FTPWorker.KEY_USERNAME to ftpUsername,
+                                    FTPWorker.KEY_PASSWORD to ftpPassword
+                                )
+
+                                val ftpWorkRequest = OneTimeWorkRequestBuilder<FTPWorker>()
+                                    .setInputData(ftpData)
+                                    .build()
+
+                                workManager.enqueue(ftpWorkRequest)
+                            },
                             modifier = Modifier.weight(1f),
                             enabled = !isOperationRunning,
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D47A1)),
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Text(
-                                text = "SYNC SNAPS",
+                                text = "SYNC NOW",
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Medium,
                                 modifier = Modifier.padding(vertical = 4.dp)
