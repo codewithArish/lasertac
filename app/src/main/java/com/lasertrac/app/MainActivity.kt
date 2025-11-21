@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lasertrac.app.db.AppDatabase
 import com.lasertrac.app.ui.AuthScreen
+import com.lasertrac.app.LocationScreen // Corrected Import
 import com.lasertrac.app.ui.theme.DashboardIconCircleBg
 import com.lasertrac.app.ui.theme.Lasertac2Theme
 import com.lasertrac.app.ui.theme.TextColorLight
@@ -70,7 +71,7 @@ import com.lasertrac.app.util.SessionManager
 import kotlinx.coroutines.launch
 
 enum class Screen {
-    Login, Dashboard, Settings, Videos, FTP, DeviceId, Violations, Reports, Snaps
+    Login, Dashboard, Settings, Videos, FTP, DeviceId, Violations, Reports, Snaps, Location // Added Location
 }
 
 data class FeatureGridItemData(
@@ -148,6 +149,12 @@ class MainActivity : ComponentActivity() {
                                         onNavigateBack = { currentScreen = Screen.Dashboard },
                                         snapLocationDao = appDb.snapLocationDao()
                                     )
+                                    // Added navigation for LocationScreen
+                                    Screen.Location -> LocationScreen(
+                                        onNavigateBack = { currentScreen = Screen.Dashboard },
+                                        snapId = "", // Pass a default or selected snapId
+                                        snapLocationDao = appDb.snapLocationDao()
+                                    )
 
                                     Screen.Login -> {}
                                 }
@@ -173,7 +180,9 @@ fun MainDashboardScreen(
         FeatureGridItemData("FTP", R.drawable.ic_ftp_custom, DashboardIconCircleBg) { onNavigateTo(Screen.FTP) },
         FeatureGridItemData("Device ID", R.drawable.ic_device_id_custom, DashboardIconCircleBg) { onNavigateTo(Screen.DeviceId) },
         FeatureGridItemData("Violations", R.drawable.ic_violations_custom, DashboardIconCircleBg) { onNavigateTo(Screen.Violations) },
-        FeatureGridItemData("Reports", R.drawable.ic_reports_custom, DashboardIconCircleBg) { onNavigateTo(Screen.Reports) }
+        FeatureGridItemData("Reports", R.drawable.ic_reports_custom, DashboardIconCircleBg) { onNavigateTo(Screen.Reports) },
+        // Added Location button to the dashboard
+        FeatureGridItemData("Location", R.drawable.ic_location_custom, DashboardIconCircleBg) { onNavigateTo(Screen.Location) }
     )
 
     Scaffold(
