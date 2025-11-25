@@ -1,65 +1,41 @@
 package com.lasertrac.app.ui.ftp
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.launch
-import org.apache.commons.net.ftp.FTP
-import org.apache.commons.net.ftp.FTPClient
-import org.apache.commons.net.ftp.FTPReply
-import java.io.IOException
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
+/**
+ * A simplified ViewModel that acts as a bridge between the UI and the FTPManager singleton.
+ * It does not contain any connection logic itself, but instead delegates to the manager.
+ */
 class FTPViewModel : ViewModel() {
 
-    private val _uiState = MutableStateFlow(FtpUiState.IDLE)
-    val uiState: StateFlow<FtpUiState> = _uiState
+    // Expose the state and file list from the manager directly to the UI.
+    val uiState = FTPManager.uiState
+    val snapFiles = FTPManager.snapFiles
 
-    private val _snapFiles = MutableStateFlow<List<String>>(emptyList())
-    val snapFiles: StateFlow<List<String>> = _snapFiles
+    /**
+     * Initiates the FTP connection and file fetching process via the FTPManager.
+     */
+    fun startFtpConnection(context: Context) {
+        FTPManager.connectOrSync(context)
+    }
 
-    fun fetchSnapsForToday() {
-        viewModelScope.launch(Dispatchers.IO) {
-            _uiState.value = FtpUiState.LOADING
-            val ftpClient = FTPClient()
-            try {
-                ftpClient.connect("192.168.10.1", 21)
-                if (!FTPReply.isPositiveCompletion(ftpClient.replyCode)) {
-                    throw IOException("FTP server refused connection.")
-                }
-                ftpClient.login("TP0003P", "12345678")
-                ftpClient.enterLocalPassiveMode()
-                ftpClient.setFileType(FTP.BINARY_FILE_TYPE)
+    /**
+     * Saves the new credentials and triggers a reconnection.
+     */
+    fun saveCredentialsAndReconnect(context: Context, username: String, password: String) {
+        CredentialsManager.saveCredentials(context, username, password)
+        FTPManager.reconnect(context)
+    }
 
-                val today = SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())
-                val remoteBaseDir = "/manual_capture/"
-
-                val directories = ftpClient.listDirectories(remoteBaseDir)
-                val todayDirectories = directories.filter { it.isDirectory && it.name.startsWith(today) }
-
-                val allFiles = mutableListOf<String>()
-                for (dir in todayDirectories) {
-                    val files = ftpClient.listFiles("${remoteBaseDir}${dir.name}")
-                    allFiles.addAll(files.map { it.name })
-                }
-
-                _snapFiles.value = allFiles
-                _uiState.value = FtpUiState.SUCCESS
-            } catch (e: IOException) {
-                e.printStackTrace()
-                _uiState.value = FtpUiState.ERROR
-            } finally {
-                try {
-                    ftpClient.logout()
-                    ftpClient.disconnect()
-                } catch (e: IOException) {
-                    e.printStackTrace()
-                }
-            }
-        }
+    /**
+     * Overridden to ensure that we do not hold a connection indefinitely if the ViewModel is cleared
+     * and the app process is still alive. For a truly persistent connection that survives beyond
+     * the ViewModel's lifecycle, this might be removed, but it's good practice to clean up.
+     */
+    override fun onCleared() {
+        // For a true singleton manager that persists, this should be commented out.
+        // FTPManager.disconnect()
+        super.onCleared()
     }
 }

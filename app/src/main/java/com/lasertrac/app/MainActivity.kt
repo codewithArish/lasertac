@@ -63,7 +63,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.lasertrac.app.db.AppDatabase
 import com.lasertrac.app.ui.AuthScreen
-import com.lasertrac.app.LocationScreen // Corrected Import
 import com.lasertrac.app.ui.theme.DashboardIconCircleBg
 import com.lasertrac.app.ui.theme.Lasertac2Theme
 import com.lasertrac.app.ui.theme.TextColorLight

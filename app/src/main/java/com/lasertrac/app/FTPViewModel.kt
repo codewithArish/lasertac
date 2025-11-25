@@ -2,56 +2,52 @@ package com.lasertrac.app
 
 import android.content.Context
 import android.net.Uri
-import android.os.Environment
+import android.util.Log
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import com.lasertrac.app.db.SavedSnapLocationEntity
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 import com.lasertrac.app.db.SnapLocationDao
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.apache.commons.net.ftp.FTP
 import org.apache.commons.net.ftp.FTPClient
-import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
+import org.apache.commons.net.ftp.FTPReply
 import java.io.IOException
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.UUID
 
-enum class FtpStatus { IDLE, CONNECTING, UPLOADING, SYNCING, CONNECTION_SUCCESS, CONNECTION_ERROR, UPLOAD_SUCCESS, UPLOAD_ERROR, SYNC_SUCCESS, SYNC_ERROR }
+enum class FtpStatus { IDLE, CONNECTING, CONNECTION_SUCCESS, CONNECTION_ERROR, SYNCING, SYNC_SUCCESS, SYNC_ERROR, UPLOADING, UPLOAD_SUCCESS, UPLOAD_ERROR }
 
 class FTPViewModel(private val snapLocationDao: SnapLocationDao) : ViewModel() {
 
-    private val _ftpServer = MutableStateFlow("192.168.10.1")
-    val ftpServer: StateFlow<String> = _ftpServer.asStateFlow()
-
-    private val _ftpPort = MutableStateFlow("21")
-    val ftpPort: StateFlow<String> = _ftpPort.asStateFlow()
-
-    private val _ftpUsername = MutableStateFlow("TP0003P")
-    val ftpUsername: StateFlow<String> = _ftpUsername.asStateFlow()
-
-    private val _ftpPassword = MutableStateFlow("12345678")
-    val ftpPassword: StateFlow<String> = _ftpPassword.asStateFlow()
-
-    private val _departmentName = MutableStateFlow("")
-    val departmentName: StateFlow<String> = _departmentName.asStateFlow()
-
-    private val _selectedImageUri = MutableStateFlow<Uri?>(null)
-    val selectedImageUri: StateFlow<Uri?> = _selectedImageUri.asStateFlow()
-
     private val _status = MutableStateFlow(FtpStatus.IDLE)
-    val status: StateFlow<FtpStatus> = _status.asStateFlow()
+    val status: StateFlow<FtpStatus> = _status
 
     private val _errorMessage = MutableStateFlow<String?>(null)
-    val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
+    val errorMessage: StateFlow<String?> = _errorMessage
+
+    private val _ftpServer = MutableStateFlow("")
+    val ftpServer: StateFlow<String> = _ftpServer
+
+    private val _ftpPort = MutableStateFlow("21")
+    val ftpPort: StateFlow<String> = _ftpPort
+
+    private val _ftpUsername = MutableStateFlow("TP0003P")
+    val ftpUsername: StateFlow<String> = _ftpUsername
+
+    private val _ftpPassword = MutableStateFlow("12345678")
+    val ftpPassword: StateFlow<String> = _ftpPassword
+
+    private val _departmentName = MutableStateFlow("")
+    val departmentName: StateFlow<String> = _departmentName
+
+    private val _selectedImageUri = MutableStateFlow<Uri?>(null)
+    val selectedImageUri: StateFlow<Uri?> = _selectedImageUri
+
+    private val ftpClient = FTPClient()
 
     fun onFtpServerChange(value: String) {
         _ftpServer.value = value
@@ -80,152 +76,116 @@ class FTPViewModel(private val snapLocationDao: SnapLocationDao) : ViewModel() {
     fun connectAndTest() {
         viewModelScope.launch {
             _status.value = FtpStatus.CONNECTING
-            val result = withContext(Dispatchers.IO) {
-                try {
-                    val ftpClient = FTPClient()
-                    ftpClient.connect(_ftpServer.value, _ftpPort.value.toInt())
-                    val success = ftpClient.login(_ftpUsername.value, _ftpPassword.value)
-                    if (success) {
-                        ftpClient.logout()
+            try {
+                withContext(Dispatchers.IO) {
+                    Log.d("FTPViewModel", "Connecting to: ${_ftpServer.value}:${_ftpPort.value} with user: ${_ftpUsername.value}")
+                    if (ftpClient.isConnected) {
                         ftpClient.disconnect()
-                        FtpStatus.CONNECTION_SUCCESS
-                    } else {
-                        _errorMessage.value = "Invalid credentials. Please retry."
-                        FtpStatus.CONNECTION_ERROR
                     }
-                } catch (e: IOException) {
-                    _errorMessage.value = e.message
-                    FtpStatus.CONNECTION_ERROR
+                    ftpClient.connect(_ftpServer.value, _ftpPort.value.toIntOrNull() ?: 21)
+                    if (!FTPReply.isPositiveCompletion(ftpClient.replyCode)) {
+                        throw IOException("FTP server refused connection.")
+                    }
+                    val isLoggedIn = ftpClient.login(_ftpUsername.value, _ftpPassword.value)
+                    if (!isLoggedIn) {
+                        throw IOException("FTP login failed.")
+                    }
+                    ftpClient.enterLocalPassiveMode()
+                    _status.value = FtpStatus.CONNECTION_SUCCESS
+                }
+            } catch (e: Exception) {
+                Log.e("FTPViewModel", "Connection failed", e)
+                _errorMessage.value = e.message
+                _status.value = FtpStatus.CONNECTION_ERROR
+            } finally {
+                if (ftpClient.isConnected) {
+                    try {
+                        withContext(Dispatchers.IO) {
+                            ftpClient.logout()
+                            ftpClient.disconnect()
+                        }
+                    } catch (e: IOException) {
+                        Log.e("FTPViewModel", "Failed to disconnect", e)
+                    }
                 }
             }
-            _status.value = result
         }
     }
 
     fun uploadDepartmentData(context: Context) {
-        if (_departmentName.value.isBlank() || _selectedImageUri.value == null) {
-            _errorMessage.value = "Department name and logo are required."
-            _status.value = FtpStatus.UPLOAD_ERROR
-            return
-        }
-
         viewModelScope.launch {
             _status.value = FtpStatus.UPLOADING
-
-            val result = withContext(Dispatchers.IO) {
-                val ftpClient = FTPClient()
-                try {
-                    ftpClient.connect(_ftpServer.value, _ftpPort.value.toInt())
-                    if (!ftpClient.login(_ftpUsername.value, _ftpPassword.value)) {
-                        _errorMessage.value = "FTP login failed. Please retry."
-                        return@withContext FtpStatus.UPLOAD_ERROR
+            try {
+                withContext(Dispatchers.IO) {
+                    if (selectedImageUri.value == null || departmentName.value.isBlank()) {
+                        throw IOException("Department name and logo are required.")
                     }
 
+                    Log.d("FTPViewModel", "Connecting to: ${_ftpServer.value}:${_ftpPort.value} with user: ${_ftpUsername.value}")
+                    if (ftpClient.isConnected) {
+                        ftpClient.disconnect()
+                    }
+                    ftpClient.connect(_ftpServer.value, _ftpPort.value.toIntOrNull() ?: 21)
+                    if (!FTPReply.isPositiveCompletion(ftpClient.replyCode)) {
+                        throw IOException("FTP server refused connection.")
+                    }
+                    val isLoggedIn = ftpClient.login(_ftpUsername.value, _ftpPassword.value)
+                    if (!isLoggedIn) {
+                        throw IOException("FTP login failed.")
+                    }
                     ftpClient.enterLocalPassiveMode()
-                    ftpClient.setFileType(FTP.BINARY_FILE_TYPE)
 
                     // Upload department name
-                    val textFile = File(context.cacheDir, "department.txt")
-                    textFile.writeText(_departmentName.value)
-                    val textInputStream = FileInputStream(textFile)
-                    val textUploaded = ftpClient.storeFile("department.txt", textInputStream)
-                    textInputStream.close()
-                    if (!textUploaded) {
-                        _errorMessage.value = "Failed to upload department name."
-                        return@withContext FtpStatus.UPLOAD_ERROR
+                    val departmentNameByteArray = departmentName.value.toByteArray()
+                    val departmentNameInputStream = departmentNameByteArray.inputStream()
+                    val remoteDepartmentNameFile = "department_name.txt"
+                    val isDepartmentNameUploaded = ftpClient.storeFile(remoteDepartmentNameFile, departmentNameInputStream)
+                    departmentNameInputStream.close()
+                    if (!isDepartmentNameUploaded) {
+                        throw IOException("Failed to upload department name.")
                     }
 
                     // Upload department logo
-                    context.contentResolver.openInputStream(_selectedImageUri.value!!)?.use { logoInputStream ->
-                        val logoUploaded = ftpClient.storeFile("logo.png", logoInputStream)
-                        if (!logoUploaded) {
-                            _errorMessage.value = "Failed to upload department logo."
-                            return@withContext FtpStatus.UPLOAD_ERROR
-                        }
-                    }
-
-                    FtpStatus.UPLOAD_SUCCESS
-                } catch (e: IOException) {
-                    _errorMessage.value = e.message
-                    FtpStatus.UPLOAD_ERROR
-                } finally {
-                    try {
-                        if (ftpClient.isConnected) {
-                            ftpClient.logout()
-                            ftpClient.disconnect()
-                        }
-                    } catch (ex: IOException) {
-                        // Ignore
-                    }
-                }
-            }
-            _status.value = result ?: FtpStatus.UPLOAD_ERROR
-        }
-    }
-
-    fun syncSnaps(context: Context) {
-        viewModelScope.launch {
-            _status.value = FtpStatus.SYNCING
-            val result = withContext(Dispatchers.IO) {
-                val ftpClient = FTPClient()
-                try {
-                    ftpClient.connect(_ftpServer.value, _ftpPort.value.toInt())
-                    if (!ftpClient.login(_ftpUsername.value, _ftpPassword.value)) {
-                        _errorMessage.value = "FTP login failed. Please retry."
-                        return@withContext FtpStatus.SYNC_ERROR
-                    }
-
-                    ftpClient.enterLocalPassiveMode()
-                    ftpClient.setFileType(FTP.BINARY_FILE_TYPE)
-
-                    val today = SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(Date())
-                    val remoteBaseDir = "/manual_capture/"
-
-                    val directories = ftpClient.listDirectories(remoteBaseDir)
-                    val todayDirectories = directories.filter { it.isDirectory && it.name.startsWith(today) }
-
-                    for (dir in todayDirectories) {
-                        val files = ftpClient.listFiles("${remoteBaseDir}${dir.name}")
-                        for (file in files) {
-                            val localFile = File(context.getExternalFilesDir(Environment.DIRECTORY_PICTURES), file.name)
-                            val outputStream = FileOutputStream(localFile)
-                            outputStream.use { 
-                                ftpClient.retrieveFile("${remoteBaseDir}${dir.name}/${file.name}", it)
+                    selectedImageUri.value?.let { uri ->
+                        context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                            val remoteLogoFile = "department_logo.jpg"
+                            val isLogoUploaded = ftpClient.storeFile(remoteLogoFile, inputStream)
+                            if (!isLogoUploaded) {
+                                throw IOException("Failed to upload department logo.")
                             }
-                            val snap = SavedSnapLocationEntity(
-                                snapId = UUID.randomUUID().toString(),
-                                imageUri = localFile.absolutePath,
-                                timestamp = System.currentTimeMillis()
-                            )
-                            snapLocationDao.insertOrUpdateSnapLocation(snap)
                         }
                     }
-                    FtpStatus.SYNC_SUCCESS
-                } catch (e: IOException) {
-                    _errorMessage.value = e.message
-                    FtpStatus.SYNC_ERROR
-                } finally {
+                    _status.value = FtpStatus.UPLOAD_SUCCESS
+                }
+            } catch (e: Exception) {
+                Log.e("FTPViewModel", "Upload failed", e)
+                _errorMessage.value = e.message
+                _status.value = FtpStatus.UPLOAD_ERROR
+            } finally {
+                if (ftpClient.isConnected) {
                     try {
-                        if (ftpClient.isConnected) {
+                        withContext(Dispatchers.IO) {
                             ftpClient.logout()
                             ftpClient.disconnect()
                         }
-                    } catch (ex: IOException) {
-                        // Ignore
+                    } catch (e: IOException) {
+                        Log.e("FTPViewModel", "Failed to disconnect", e)
                     }
                 }
             }
-            _status.value = result ?: FtpStatus.SYNC_ERROR
         }
     }
-}
+    fun syncFiles(context: Context) {
+        val ftpData = workDataOf(
+            FTPWorker.KEY_SERVER to ftpServer.value,
+            FTPWorker.KEY_USERNAME to ftpUsername.value,
+            FTPWorker.KEY_PASSWORD to ftpPassword.value
+        )
 
-class FTPViewModelFactory(private val snapLocationDao: SnapLocationDao) : ViewModelProvider.Factory {
-    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        if (modelClass.isAssignableFrom(FTPViewModel::class.java)) {
-            @Suppress("UNCHECKED_CAST")
-            return FTPViewModel(snapLocationDao) as T
-        }
-        throw IllegalArgumentException("Unknown ViewModel class")
+        val ftpWorkRequest = OneTimeWorkRequestBuilder<FTPWorker>()
+            .setInputData(ftpData)
+            .build()
+
+        WorkManager.getInstance(context).enqueueUniqueWork("ftp_sync", ExistingWorkPolicy.KEEP, ftpWorkRequest)
     }
 }

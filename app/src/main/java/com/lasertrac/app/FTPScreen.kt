@@ -1,5 +1,8 @@
 package com.lasertrac.app
 
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -9,6 +12,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -54,9 +58,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
-import androidx.work.workDataOf
+import androidx.core.content.ContextCompat
 import coil.compose.rememberAsyncImagePainter
 import com.lasertrac.app.ui.theme.TextColorLight
 import com.lasertrac.app.ui.theme.TopBarColor
@@ -65,7 +67,6 @@ import com.lasertrac.app.ui.theme.TopBarColor
 @Composable
 fun FTPScreen(onNavigateBack: () -> Unit, ftpViewModel: FTPViewModel) {
     val context = LocalContext.current
-    val workManager = WorkManager.getInstance(context)
 
     val ftpServer by ftpViewModel.ftpServer.collectAsState()
     val ftpPort by ftpViewModel.ftpPort.collectAsState()
@@ -157,32 +158,7 @@ fun FTPScreen(onNavigateBack: () -> Unit, ftpViewModel: FTPViewModel) {
                                 modifier = Modifier.padding(vertical = 4.dp)
                             )
                         }
-                        Button(
-                            onClick = {
-                                val ftpData = workDataOf(
-                                    FTPWorker.KEY_SERVER to ftpServer,
-                                    FTPWorker.KEY_USERNAME to ftpUsername,
-                                    FTPWorker.KEY_PASSWORD to ftpPassword
-                                )
-
-                                val ftpWorkRequest = OneTimeWorkRequestBuilder<FTPWorker>()
-                                    .setInputData(ftpData)
-                                    .build()
-
-                                workManager.enqueue(ftpWorkRequest)
-                            },
-                            modifier = Modifier.weight(1f),
-                            enabled = !isOperationRunning,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D47A1)),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text(
-                                text = "SYNC NOW",
-                                fontSize = 16.sp,
-                                fontWeight = FontWeight.Medium,
-                                modifier = Modifier.padding(vertical = 4.dp)
-                            )
-                        }
+                        FtpSyncScreen(ftpViewModel = ftpViewModel)
                     }
                 }
             }
@@ -313,6 +289,73 @@ fun FTPScreen(onNavigateBack: () -> Unit, ftpViewModel: FTPViewModel) {
             }
         }
     }
+}
+
+@Composable
+fun RowScope.FtpSyncScreen(ftpViewModel: FTPViewModel) { // Pass your ViewModel
+    val context = LocalContext.current
+    val status by ftpViewModel.status.collectAsState()
+
+    // Array of permissions your feature needs
+    val permissionsToRequest = arrayOf(
+        Manifest.permission.READ_MEDIA_IMAGES,
+        Manifest.permission.READ_MEDIA_VIDEO
+    )
+
+    // State to track if permissions have been granted
+    var hasPermissions by remember {
+        mutableStateOf(
+            permissionsToRequest.all {
+                ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED
+            }
+        )
+    }
+
+    // Create the permission launcher
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+        onResult = { permissions ->
+            // Check if all permissions were granted after the user responded
+            hasPermissions = permissions.values.all { it }
+            if (hasPermissions) {
+                // Permissions granted! Now we can start the sync.
+                ftpViewModel.syncFiles(context) // Or however you trigger the worker
+            } else {
+                // Handle the case where the user denies permissions
+                // Show a message, disable the button, etc.
+            }
+        }
+    )
+    val isOperationRunning = status == FtpStatus.CONNECTING || status == FtpStatus.SYNCING
+
+    Column(modifier = Modifier.weight(1f)) {
+        Button(
+            onClick = {
+                if (hasPermissions) {
+                    // If we already have permission, just sync
+                    ftpViewModel.syncFiles(context)
+                } else {
+                    // Otherwise, launch the permission request dialog
+                    permissionLauncher.launch(permissionsToRequest)
+                }
+            },
+            enabled = !isOperationRunning,
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D47A1)),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Text(
+                text = "SYNC NOW",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(vertical = 4.dp)
+            )
+        }
+
+        if (!hasPermissions) {
+            Text("Please grant media permissions to sync files.", color = Color.White)
+        }
+    }
+
 }
 
 @Composable

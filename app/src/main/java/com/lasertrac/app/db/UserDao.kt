@@ -24,5 +24,5 @@ interface UserDao {
     fun getUserByEmail(email: String): Flow<User?>
 
     @Query("SELECT * FROM app_users WHERE isSynced = 0")
-    fun getUnsyncedUsers(): List<User>
+    suspend fun getUnsyncedUsers(): List<User>
 }
