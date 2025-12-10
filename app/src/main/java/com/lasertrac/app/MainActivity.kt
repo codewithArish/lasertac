@@ -145,8 +145,7 @@ class MainActivity : ComponentActivity() {
                                     )
                                     Screen.Reports -> ReportsScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
                                     Screen.Snaps -> SnapsScreen(
-                                        onNavigateBack = { currentScreen = Screen.Dashboard },
-                                        snapLocationDao = appDb.snapLocationDao()
+                                        onNavigateBack = { currentScreen = Screen.Dashboard }
                                     )
                                     // Added navigation for LocationScreen
                                     Screen.Location -> LocationScreen(

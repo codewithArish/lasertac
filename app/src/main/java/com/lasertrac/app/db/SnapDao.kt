@@ -11,7 +11,8 @@ interface SnapDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(snap: SnapDetail)
 
-    @Query("SELECT * FROM snap_details")
+    // Modified to return a Flow for reactive updates on a background thread.
+    @Query("SELECT * FROM snap_details ORDER BY dateTime DESC")
     fun getAllSnaps(): Flow<List<SnapDetail>>
 
     @Query("SELECT * FROM snap_details WHERE id = :snapId")

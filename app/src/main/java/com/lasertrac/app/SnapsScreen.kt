@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -32,12 +33,15 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.MaterialTheme.colorScheme
+import androidx.compose.material3.MaterialTheme.typography
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -45,19 +49,16 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
@@ -66,152 +67,82 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
-import com.lasertrac.app.db.SavedSnapLocationEntity
+import com.lasertrac.app.data.repository.LocalMediaRepository
+import com.lasertrac.app.data.repository.SnapRepository
+import com.lasertrac.app.db.AppDatabase
 import com.lasertrac.app.db.SnapDetail
-import com.lasertrac.app.db.SnapLocationDao
 import com.lasertrac.app.db.SnapStatus
 import com.lasertrac.app.ui.theme.TextColorLight
 import com.lasertrac.app.ui.theme.TopBarColor
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
-fun SavedSnapLocationEntity.toSnapDetail(): SnapDetail {
-    val currentDateTimeStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(this.timestamp))
-    val currentDateStr = currentDateTimeStr.substringBefore(" ")
-
-    return SnapDetail(
-        id = this.snapId,
-        regNr = "", // Default empty, can be edited
-        evidenceDate = currentDateStr,
-        dateTime = currentDateTimeStr,
-        status = SnapStatus.PENDING,
-        speed = 0, // Placeholder
-        deviceId = "", // Placeholder
-        operatorId = "", // Placeholder
-        speedLimit = 0, // Placeholder
-        location = this.fullAddress ?: "N/A",
-        violationDistance = "", // Placeholder
-        recordNr = "REC-${this.snapId.take(4)}",
-        latitude = this.latitude?.toString() ?: "N/A",
-        longitude = this.longitude?.toString() ?: "N/A",
-        district = this.district ?: "N/A",
-        policeStation = this.selectedPoliceArea ?: "N/A",
-        address = this.fullAddress ?: "N/A",
-        uploadStatus = "Pending",
-        mainImage = this.imageUri,
-        licensePlateImage = this.imageUri,
-        mapImage = null, // Placeholder
-        violationSummary = "", // Placeholder
-        violationManagementLink = "", // Placeholder
-        accessLink = "", // Placeholder
-        regNrStatus = "" // Placeholder
-    )
-}
-
-private fun Long.toFormattedDateString(pattern: String = "dd-MM-yyyy"): String {
-    return SimpleDateFormat(pattern, Locale.getDefault()).format(Date(this))
-}
-
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SnapsScreen(onNavigateBack: () -> Unit, snapLocationDao: SnapLocationDao) {
-    var showDatePicker by remember { mutableStateOf(false) }
-    val datePickerState = rememberDatePickerState(initialSelectedDateMillis = System.currentTimeMillis())
-    var isSearchActive by remember { mutableStateOf(false) }
-    var searchQuery by remember { mutableStateOf("") }
-    var showInfoDialog by remember { mutableStateOf(false) }
+fun SnapsScreen(onNavigateBack: () -> Unit) {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-    val allSnapDetails = remember { mutableStateListOf<SnapDetail>() }
-
-    LaunchedEffect(key1 = snapLocationDao) {
-        snapLocationDao.getAllSnapLocations().map { dbList ->
-            dbList.map { it.toSnapDetail() }.sortedByDescending { it.dateTime }
-        }.collect { snapsFromDb ->
-            allSnapDetails.clear()
-            allSnapDetails.addAll(snapsFromDb)
-        }
+    val appDatabase = AppDatabase.getDatabase(context)
+    val snapRepository = remember {
+        SnapRepository(
+            snapDao = appDatabase.snapDao(),
+            localMediaRepository = LocalMediaRepository(context)
+        )
     }
+    val viewModel: SnapsViewModel = viewModel(factory = SnapsViewModelFactory(snapRepository))
 
-    var selectionMode by remember { mutableStateOf(false) }
-    val selectedSnapIds = remember { mutableStateListOf<String>() }
-    var selectedSnapForPreview by remember { mutableStateOf<SnapDetail?>(null) }
-
-    fun exitSelectionMode() {
-        selectionMode = false
-        selectedSnapIds.clear()
-    }
-
-    val filteredSnapDetails by remember(searchQuery, allSnapDetails.toList(), datePickerState.selectedDateMillis) {
-        derivedStateOf {
-            val selectedFilterDate = datePickerState.selectedDateMillis?.toFormattedDateString("yyyy-MM-dd")
-            val dateFiltered = if (selectedFilterDate != null) {
-                allSnapDetails.filter { it.evidenceDate == selectedFilterDate }
-            } else {
-                allSnapDetails
-            }
-            if (searchQuery.isBlank()) dateFiltered else dateFiltered.filter { it.regNr.contains(searchQuery, true) || it.location.contains(searchQuery, true) }
-        }
-    }
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    var showDatePicker by remember { mutableStateOf(false) }
+    val datePickerState = rememberDatePickerState()
+    var isSearchActive by remember { mutableStateOf(false) }
+    var showInfoDialog by remember { mutableStateOf(false) }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
+        containerColor = colorScheme.background,
         topBar = {
-            if (selectionMode) {
+            if (uiState.selectionMode) {
                 SelectionTopAppBar(
-                    selectedCount = selectedSnapIds.size,
-                    allSelected = if (filteredSnapDetails.isNotEmpty()) selectedSnapIds.size == filteredSnapDetails.size else false,
-                    onClose = { exitSelectionMode() },
-                    onSelectAll = {
-                        if (selectedSnapIds.size == filteredSnapDetails.size) selectedSnapIds.clear() else selectedSnapIds.addAll(filteredSnapDetails.map { it.id })
-                    },
+                    selectedCount = uiState.selectedSnapIds.size,
+                    allSelected = if (uiState.filteredSnaps.isNotEmpty()) uiState.selectedSnapIds.size == uiState.filteredSnaps.size else false,
+                    onClose = viewModel::clearSelectionMode,
+                    onSelectAll = viewModel::toggleSelectAll,
                     onDelete = {
-                        coroutineScope.launch {
-                            snapLocationDao.deleteSnapsByIds(selectedSnapIds.toList())
-                            Toast.makeText(context, "${selectedSnapIds.size} snaps deleted.", Toast.LENGTH_SHORT).show()
-                            exitSelectionMode()
-                        }
+                        viewModel.deleteSelectedSnaps()
+                        Toast.makeText(context, "${uiState.selectedSnapIds.size} snaps deleted.", Toast.LENGTH_SHORT).show()
                     }
                 )
             } else {
                 NormalTopAppBar(
-                    isSearchActive, searchQuery, { searchQuery = it }, { isSearchActive = !isSearchActive }, onNavigateBack, { showDatePicker = true }, { showInfoDialog = true }
+                    isSearchActive, uiState.searchQuery, viewModel::onSearchQueryChanged, { isSearchActive = !isSearchActive }, onNavigateBack, { showDatePicker = true }, { showInfoDialog = true }
                 )
             }
         }
     ) { innerPadding ->
-        Column(Modifier.fillMaxSize().padding(innerPadding)) {
-            if (filteredSnapDetails.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No snaps found.", style = MaterialTheme.typography.bodyLarge)
+        Box(modifier = Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
+            when {
+                uiState.isLoading -> {
+                    CircularProgressIndicator()
                 }
-            } else {
-                LazyColumn(
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    items(filteredSnapDetails, key = { it.id }) { snap ->
-                        SnapCard(
-                            snap = snap,
-                            isSelected = snap.id in selectedSnapIds,
-                            onClick = {
-                                if (selectionMode) {
-                                    if (snap.id in selectedSnapIds) selectedSnapIds.remove(snap.id) else selectedSnapIds.add(snap.id)
-                                } else {
-                                    selectedSnapForPreview = snap
-                                }
-                            },
-                            onLongClick = {
-                                if (!selectionMode) {
-                                    selectionMode = true
-                                    selectedSnapIds.add(snap.id)
-                                }
-                            }
-                        )
+                uiState.error != null -> {
+                    Text(text = "Error: ${uiState.error}", color = colorScheme.error)
+                }
+                uiState.filteredSnaps.isEmpty() -> {
+                    Text("No snaps found.", style = typography.bodyLarge)
+                }
+                else -> {
+                    LazyColumn(
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(uiState.filteredSnaps, key = { it.id }) { snap ->
+                            SnapCard(
+                                snap = snap,
+                                isSelected = snap.id in uiState.selectedSnapIds,
+                                onClick = { viewModel.onSnapClicked(snap) },
+                                onLongClick = { viewModel.enterSelectionMode(snap.id) }
+                            )
+                        }
                     }
                 }
             }
@@ -221,7 +152,10 @@ fun SnapsScreen(onNavigateBack: () -> Unit, snapLocationDao: SnapLocationDao) {
             DatePickerDialog(
                 onDismissRequest = { showDatePicker = false },
                 confirmButton = {
-                    TextButton(onClick = { showDatePicker = false }) { Text("OK") }
+                    TextButton(onClick = {
+                        // Date filtering logic can be added here if needed
+                        showDatePicker = false
+                    }) { Text("OK") }
                 },
                 dismissButton = {
                     TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
@@ -231,15 +165,15 @@ fun SnapsScreen(onNavigateBack: () -> Unit, snapLocationDao: SnapLocationDao) {
             }
         }
 
-        selectedSnapForPreview?.let { snap ->
-            SnapPreviewDialog(snap = snap, onDismiss = { selectedSnapForPreview = null })
+        uiState.snapForPreview?.let { snap ->
+            SnapPreviewDialog(snap = snap, onDismiss = viewModel::onPreviewDismissed)
         }
 
         if (showInfoDialog) {
             AlertDialog(
                 onDismissRequest = { showInfoDialog = false },
                 title = { Text("Snaps Screen Information") },
-                text = { Text("Long-press a snap to enter selection mode.\n- Tap to preview a snap.\n- Use the search bar to filter by registration number or location.\n- Use the calendar to filter by date.") },
+                text = { Text("Long-press a snap to enter selection mode.\n- Tap to preview a snap.\n- Use the search bar to filter by registration number or location.") },
                 confirmButton = {
                     TextButton(onClick = { showInfoDialog = false }) { Text("OK") }
                 }
@@ -345,7 +279,7 @@ private fun SnapCard(
             .fillMaxWidth()
             .combinedClickable(onClick = onClick, onLongClick = onLongClick),
         shape = RoundedCornerShape(12.dp),
-        border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+        border = if (isSelected) BorderStroke(2.dp, colorScheme.primary) else null,
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
         Row(
@@ -356,15 +290,16 @@ private fun SnapCard(
                 model = snap.mainImage,
                 contentDescription = "Snap preview",
                 modifier = Modifier.size(64.dp).clip(RoundedCornerShape(8.dp)),
-                contentScale = ContentScale.Crop
+                contentScale = ContentScale.Crop,
+                error = rememberVectorPainter(image = Icons.Default.BrokenImage)
             )
             Spacer(modifier = Modifier.size(16.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(snap.regNr.ifBlank { "No Reg Nr" }, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(snap.regNr.ifBlank { "No Reg Nr" }, style = typography.titleMedium, fontWeight = FontWeight.Bold)
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(snap.location, style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
+                Text(snap.location, style = typography.bodyMedium, color = Color.Gray)
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(snap.dateTime, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                Text(snap.dateTime, style = typography.bodySmall, color = Color.Gray)
             }
             Spacer(modifier = Modifier.size(16.dp))
             Box(modifier = Modifier.background(snap.status.color, CircleShape).padding(horizontal = 8.dp, vertical = 4.dp)) {
@@ -383,14 +318,14 @@ private fun SnapPreviewDialog(snap: SnapDetail, onDismiss: () -> Unit) {
     ) {
         Scaffold {
             Column(
-                modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(it)
+                modifier = Modifier.fillMaxSize().background(colorScheme.background).padding(it)
             ) {
                 TopAppBar(
                     title = { Text("Snap Detail") },
                     navigationIcon = { IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Close") } }
                 )
                 LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    item { AsyncImage(snap.mainImage, "Main Image", Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))) }
+                    item { AsyncImage(snap.mainImage, "Main Image", Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)), error = rememberVectorPainter(image = Icons.Default.BrokenImage)) }
                     item { Text("Registration: ${snap.regNr}", fontWeight = FontWeight.Bold) }
                     item { Text("Date & Time: ${snap.dateTime}") }
                     item { Text("Location: ${snap.address}") }
