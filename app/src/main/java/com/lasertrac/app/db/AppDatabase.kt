@@ -5,8 +5,12 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.sqlite.db.SupportSQLiteDatabase
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
-@Database(entities = [User::class, SavedSnapLocationEntity::class, Violation::class, SnapDetail::class], version = 5, exportSchema = false)
+@Database(entities = [User::class, SavedSnapLocationEntity::class, Violation::class, SnapDetail::class], version = 6, exportSchema = false)
 @TypeConverters(SnapStatusConverter::class)
 abstract class AppDatabase : RoomDatabase() {
 
@@ -27,9 +31,25 @@ abstract class AppDatabase : RoomDatabase() {
                     "lasertrac_database"
                 )
                     .fallbackToDestructiveMigration()
+                    .addCallback(DatabaseCallback(CoroutineScope(Dispatchers.IO)))
                     .build()
                 INSTANCE = instance
                 instance
+            }
+        }
+
+        private class DatabaseCallback(
+            private val scope: CoroutineScope
+        ) : RoomDatabase.Callback() {
+
+            override fun onCreate(db: SupportSQLiteDatabase) {
+                super.onCreate(db)
+                INSTANCE?.let {
+                    scope.launch {
+                        val violationDao = it.violationDao()
+                        violationDao.insertAll(Violation.predefinedViolations)
+                    }
+                }
             }
         }
     }

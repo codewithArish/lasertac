@@ -12,6 +12,9 @@ interface ViolationDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(violation: Violation)
 
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertAll(violations: List<Violation>)
+
     @Update
     suspend fun update(violation: Violation)
 

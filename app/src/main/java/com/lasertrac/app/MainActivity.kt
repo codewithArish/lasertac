@@ -2,9 +2,9 @@ package com.lasertrac.app
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
@@ -103,8 +103,16 @@ class MainActivity : ComponentActivity() {
                         val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
                         val scope = rememberCoroutineScope()
 
+                        // This BackHandler is for closing the drawer
                         BackHandler(enabled = drawerState.isOpen) {
                             scope.launch { drawerState.close() }
+                        }
+
+                        // This BackHandler is for navigating back to the Dashboard from other screens
+                        if (currentScreen != Screen.Dashboard) {
+                            BackHandler(enabled = !drawerState.isOpen) {
+                                currentScreen = Screen.Dashboard
+                            }
                         }
 
                         ModalNavigationDrawer(

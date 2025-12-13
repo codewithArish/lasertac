@@ -5,37 +5,38 @@ import androidx.lifecycle.ViewModel
 
 /**
  * A simplified ViewModel that acts as a bridge between the UI and the FTPManager singleton.
- * It does not contain any connection logic itself, but instead delegates to the manager.
+ * It delegates all logic to the manager.
  */
 class FTPViewModel : ViewModel() {
 
-    // Expose the state and file list from the manager directly to the UI.
+    // Expose the state, file count, and error message from the manager directly to the UI.
     val uiState = FTPManager.uiState
-    val snapFiles = FTPManager.snapFiles
+    val syncedFileCount = FTPManager.syncedFileCount
+    val errorMessage = FTPManager.errorMessage
 
     /**
-     * Initiates the FTP connection and file fetching process via the FTPManager.
+     * Initiates the FTP sync process via the FTPManager.
      */
-    fun startFtpConnection(context: Context) {
-        FTPManager.connectOrSync(context)
+    fun startSync(context: Context) {
+        FTPManager.startSync(context)
     }
 
     /**
-     * Saves the new credentials and triggers a reconnection.
+     * Saves the new credentials and triggers a new sync process.
      */
-    fun saveCredentialsAndReconnect(context: Context, username: String, password: String) {
+    fun saveCredentialsAndSync(context: Context, username: String, password: String) {
         CredentialsManager.saveCredentials(context, username, password)
-        FTPManager.reconnect(context)
+        // Disconnect first to ensure the new credentials are used for the connection.
+        FTPManager.disconnect()
+        FTPManager.startSync(context)
     }
 
     /**
-     * Overridden to ensure that we do not hold a connection indefinitely if the ViewModel is cleared
-     * and the app process is still alive. For a truly persistent connection that survives beyond
-     * the ViewModel's lifecycle, this might be removed, but it's good practice to clean up.
+     * Overridden to ensure we disconnect from FTP when the ViewModel is cleared.
+     * This prevents leaving an open connection if the app process is still alive.
      */
     override fun onCleared() {
-        // For a true singleton manager that persists, this should be commented out.
-        // FTPManager.disconnect()
+        FTPManager.disconnect()
         super.onCleared()
     }
 }
