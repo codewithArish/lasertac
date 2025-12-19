@@ -9,12 +9,39 @@ class SnapRepository(
     private val localMediaRepository: LocalMediaRepository
 ) {
 
-    // This now directly returns the Flow from the DAO.
     fun getLocalDbSnaps(): Flow<List<SnapDetail>> = snapDao.getAllSnaps()
 
-    // This remains a suspend function to fetch from local storage.
+    fun getSnapsByDate(date: String): Flow<List<SnapDetail>> {
+        return snapDao.getSnapsByDate(date)
+    }
+
     suspend fun getLocalMediaSnaps(): Result<List<SnapDetail>> {
         return localMediaRepository.getLocalMediaSnaps()
+    }
+
+    /**
+     * Fetches the latest snaps from local media, inserts them into the database,
+     * and returns the number of *new* snaps that were added.
+     */
+    suspend fun refreshSnapsFromLocalMedia(): Result<Int> {
+        return try {
+            val mediaSnapsResult = localMediaRepository.getLocalMediaSnaps()
+
+            if (mediaSnapsResult.isSuccess) {
+                val mediaSnaps = mediaSnapsResult.getOrThrow()
+                if (mediaSnaps.isNotEmpty()) {
+                    val insertResults = snapDao.insertAll(mediaSnaps)
+                    val newSnapsCount = insertResults.count { it != -1L }
+                    Result.success(newSnapsCount)
+                } else {
+                    Result.success(0) // No snaps found in media
+                }
+            } else {
+                Result.failure(mediaSnapsResult.exceptionOrNull() ?: Exception("Unknown error fetching from media"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 
     suspend fun deleteSnaps(snapIds: List<String>) {

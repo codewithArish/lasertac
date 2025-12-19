@@ -37,7 +37,7 @@ class LocalMediaRepository(private val context: Context) {
                 val nameColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DISPLAY_NAME)
                 val dateModifiedColumn = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_MODIFIED)
 
-                while (cursor.moveToNext()) {
+                if (cursor.moveToNext()) { // Only fetch the most recent snap
                     val id = cursor.getLong(idColumn)
                     val name = cursor.getString(nameColumn)
                     val dateModified = cursor.getLong(dateModifiedColumn) * 1000 // Convert to milliseconds

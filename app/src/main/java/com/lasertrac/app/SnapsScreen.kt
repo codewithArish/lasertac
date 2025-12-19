@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -43,12 +44,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MaterialTheme.colorScheme
 import androidx.compose.material3.MaterialTheme.typography
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -77,6 +80,7 @@ import com.lasertrac.app.db.SnapDetail
 import com.lasertrac.app.db.SnapStatus
 import com.lasertrac.app.ui.theme.TextColorLight
 import com.lasertrac.app.ui.theme.TopBarColor
+import kotlinx.coroutines.flow.collectLatest
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,13 +93,40 @@ fun SnapsScreen(onNavigateBack: () -> Unit) {
             localMediaRepository = LocalMediaRepository(context)
         )
     }
-    val viewModel: SnapsViewModel = viewModel(factory = SnapsViewModelFactory(snapRepository))
+    val viewModel: SnapsViewModel = viewModel(factory = SnapsViewModelFactory(snapRepository, context))
 
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var showDatePicker by remember { mutableStateOf(false) }
-    val datePickerState = rememberDatePickerState()
+    val datePickerState = rememberDatePickerState(
+        initialSelectedDateMillis = uiState.selectedDateMillis,
+        yearRange = IntRange(2000, java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)),
+        selectableDates = object : androidx.compose.material3.SelectableDates {
+            override fun isSelectableDate(utcTimeMillis: Long): Boolean {
+                // Only allow dates up to today (disable future dates)
+                val today = java.util.Calendar.getInstance().apply {
+                    set(java.util.Calendar.HOUR_OF_DAY, 0)
+                    set(java.util.Calendar.MINUTE, 0)
+                    set(java.util.Calendar.SECOND, 0)
+                    set(java.util.Calendar.MILLISECOND, 0)
+                }.timeInMillis
+                return utcTimeMillis <= today
+            }
+
+            override fun isSelectableYear(year: Int): Boolean {
+                val currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+                return year <= currentYear
+            }
+        }
+    )
     var isSearchActive by remember { mutableStateOf(false) }
     var showInfoDialog by remember { mutableStateOf(false) }
+
+    // Listener for refresh events
+    LaunchedEffect(Unit) {
+        viewModel.refreshEvent.collectLatest { message ->
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
+    }
 
     Scaffold(
         containerColor = colorScheme.background,
@@ -113,36 +144,40 @@ fun SnapsScreen(onNavigateBack: () -> Unit) {
                 )
             } else {
                 NormalTopAppBar(
-                    isSearchActive, uiState.searchQuery, viewModel::onSearchQueryChanged, { isSearchActive = !isSearchActive }, onNavigateBack, { showDatePicker = true }, { showInfoDialog = true }
+                    title = uiState.selectedDateString,
+                    isSearchActive = isSearchActive,
+                    searchQuery = uiState.searchQuery,
+                    isRefreshing = uiState.isLoading,
+                    onQueryChange = viewModel::onSearchQueryChanged,
+                    onSearchToggle = { isSearchActive = !isSearchActive },
+                    onNavigateBack = onNavigateBack,
+                    onCalendarClick = { showDatePicker = true },
+                    onInfoClick = { showInfoDialog = true },
+                    onRefresh = { viewModel.refreshSnaps() }
                 )
             }
         }
     ) { innerPadding ->
         Box(modifier = Modifier.fillMaxSize().padding(innerPadding), contentAlignment = Alignment.Center) {
-            when {
-                uiState.isLoading -> {
-                    CircularProgressIndicator()
-                }
-                uiState.error != null -> {
-                    Text(text = "Error: ${uiState.error}", color = colorScheme.error)
-                }
-                uiState.filteredSnaps.isEmpty() -> {
-                    Text("No snaps found.", style = typography.bodyLarge)
-                }
-                else -> {
-                    LazyColumn(
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        items(uiState.filteredSnaps, key = { it.id }) { snap ->
-                            SnapCard(
-                                snap = snap,
-                                isSelected = snap.id in uiState.selectedSnapIds,
-                                onClick = { viewModel.onSnapClicked(snap) },
-                                onLongClick = { viewModel.enterSelectionMode(snap.id) }
-                            )
-                        }
+            if (uiState.isLoading && uiState.snaps.isEmpty()) { // Show main loader only on initial load
+                CircularProgressIndicator()
+            } else if (uiState.error != null) {
+                Text(text = "Error: ${uiState.error}", color = colorScheme.error)
+            } else if (uiState.filteredSnaps.isEmpty()) {
+                Text("No snaps found.", style = typography.bodyLarge)
+            } else {
+                LazyColumn(
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(uiState.filteredSnaps, key = { it.id }) { snap ->
+                        SnapCard(
+                            snap = snap,
+                            isSelected = snap.id in uiState.selectedSnapIds,
+                            onClick = { viewModel.onSnapClicked(snap) },
+                            onLongClick = { viewModel.enterSelectionMode(snap.id) }
+                        )
                     }
                 }
             }
@@ -153,12 +188,15 @@ fun SnapsScreen(onNavigateBack: () -> Unit) {
                 onDismissRequest = { showDatePicker = false },
                 confirmButton = {
                     TextButton(onClick = {
-                        // Date filtering logic can be added here if needed
+                        viewModel.onDateSelected(datePickerState.selectedDateMillis)
                         showDatePicker = false
                     }) { Text("OK") }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showDatePicker = false }) { Text("Cancel") }
+                    TextButton(onClick = {
+                        viewModel.onDateSelected(null) // Clear filter
+                        showDatePicker = false
+                    }) { Text("Clear") }
                 }
             ) {
                 DatePicker(state = datePickerState)
@@ -185,13 +223,16 @@ fun SnapsScreen(onNavigateBack: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NormalTopAppBar(
+    title: String,
     isSearchActive: Boolean,
+    isRefreshing: Boolean,
     searchQuery: String,
     onQueryChange: (String) -> Unit,
     onSearchToggle: () -> Unit,
     onNavigateBack: () -> Unit,
     onCalendarClick: () -> Unit,
-    onInfoClick: () -> Unit
+    onInfoClick: () -> Unit,
+    onRefresh: () -> Unit
 ) {
     TopAppBar(
         title = {
@@ -211,7 +252,7 @@ private fun NormalTopAppBar(
                     }
                 )
             } else {
-                Text("Snaps", color = TextColorLight)
+                Text(title, color = TextColorLight)
             }
         },
         navigationIcon = {
@@ -225,6 +266,17 @@ private fun NormalTopAppBar(
                     Icon(Icons.Default.Close, contentDescription = "Close Search", tint = TextColorLight)
                 }
             } else {
+                if (isRefreshing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = TextColorLight,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    IconButton(onClick = onRefresh) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh Snaps", tint = TextColorLight)
+                    }
+                }
                 IconButton(onClick = onSearchToggle) {
                     Icon(Icons.Default.Search, contentDescription = "Search Snaps", tint = TextColorLight)
                 }

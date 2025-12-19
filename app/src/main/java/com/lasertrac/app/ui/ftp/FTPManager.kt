@@ -29,7 +29,8 @@ object FTPManager {
     enum class FtpUiState {
         IDLE, // Koi operation nahi chal raha
         CONNECTING, // Connection ho raha hai
-        SYNCING, // Files sync ho rahi hain
+        SYNCING, // Preparing to sync / connected and will start
+        SYNCING_PROGRESS, // Actively downloading files (progress updates available)
         SYNC_COMPLETED, // Sync poora ho gaya
         ERROR // Koi galti hui
     }
@@ -48,7 +49,7 @@ object FTPManager {
      * Can be triggered manually or automatically.
      */
     fun startSync(context: Context) {
-        if (_uiState.value == FtpUiState.CONNECTING || _uiState.value == FtpUiState.SYNCING) return
+        if (_uiState.value == FtpUiState.CONNECTING || _uiState.value == FtpUiState.SYNCING || _uiState.value == FtpUiState.SYNCING_PROGRESS) return
 
         managerScope.launch {
             _uiState.value = FtpUiState.CONNECTING
@@ -99,6 +100,10 @@ object FTPManager {
             localDir.mkdirs()
         }
 
+        // Indicate active progress and reset counter so UI shows real-time progress
+        _uiState.value = FtpUiState.SYNCING_PROGRESS
+        _syncedFileCount.value = 0
+
         var downloadedCount = 0
         try {
             val dateDirectories = ftpClient.listFiles(remoteBaseDir) ?: emptyArray()
@@ -120,7 +125,8 @@ object FTPManager {
                         FileOutputStream(localFile).use { outputStream ->
                             if (ftpClient.retrieveFile(remoteFilePath, outputStream)) {
                                 downloadedCount++
-                                Log.i(TAG, "Downloaded: ${ftpFile.name}")
+                                _syncedFileCount.value = downloadedCount // emit progress immediately
+                                Log.i(TAG, "Downloaded: ${ftpFile.name} (Progress: $downloadedCount)")
                             } else {
                                 Log.w(TAG, "Failed to download: ${ftpFile.name}")
                             }

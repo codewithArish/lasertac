@@ -41,6 +41,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -85,7 +86,27 @@ data class VideoDetail(
 @Composable
 fun VideosScreen(onNavigateBack: () -> Unit) {
     var showDatePicker by remember { mutableStateOf(false) }
-    val datePickerState = rememberDatePickerState(initialSelectedDateMillis = null)
+    val datePickerState = rememberDatePickerState(
+        initialSelectedDateMillis = null,
+        yearRange = IntRange(2000, java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)),
+        selectableDates = object : androidx.compose.material3.SelectableDates {
+            override fun isSelectableDate(utcTimeMillis: Long): Boolean {
+                // Only allow dates up to today (disable future dates)
+                val today = java.util.Calendar.getInstance().apply {
+                    set(java.util.Calendar.HOUR_OF_DAY, 0)
+                    set(java.util.Calendar.MINUTE, 0)
+                    set(java.util.Calendar.SECOND, 0)
+                    set(java.util.Calendar.MILLISECOND, 0)
+                }.timeInMillis
+                return utcTimeMillis <= today
+            }
+
+            override fun isSelectableYear(year: Int): Boolean {
+                val currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+                return year <= currentYear
+            }
+        }
+    )
     val selectedDateFormatted by remember {
         derivedStateOf { datePickerState.selectedDateMillis?.toFormattedDateString() ?: "All Videos" }
     }

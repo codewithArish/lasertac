@@ -105,6 +105,9 @@ fun SettingsScreen(onNavigateBack: () -> Unit) {
                         calendar.get(Calendar.DAY_OF_MONTH)
                     )
 
+                    // Disable future dates - set max date to today
+                    datePickerDialog.datePicker.maxDate = System.currentTimeMillis()
+
                     OutlinedButton(
                         onClick = { datePickerDialog.show() },
                         colors = ButtonDefaults.outlinedButtonColors(
