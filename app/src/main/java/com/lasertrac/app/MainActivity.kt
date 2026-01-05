@@ -140,7 +140,7 @@ class MainActivity : ComponentActivity() {
                                     Screen.Settings -> SettingsScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
                                     Screen.Videos -> VideosScreen(onNavigateBack = { currentScreen = Screen.Dashboard })
                                     Screen.FTP -> {
-                                        val ftpViewModel: FTPViewModel = viewModel(factory = FTPViewModelFactory(appDb.snapLocationDao()))
+                                        val ftpViewModel: FTPViewModel = viewModel(factory = FTPViewModelFactory(application, appDb.snapLocationDao()))
                                         FTPScreen(
                                             onNavigateBack = { currentScreen = Screen.Dashboard },
                                             ftpViewModel = ftpViewModel

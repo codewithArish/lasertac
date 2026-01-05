@@ -1,9 +1,10 @@
 package com.lasertrac.app
 
 import android.Manifest
-import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -43,6 +44,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -62,6 +64,7 @@ import androidx.core.content.ContextCompat
 import coil.compose.rememberAsyncImagePainter
 import com.lasertrac.app.ui.theme.TextColorLight
 import com.lasertrac.app.ui.theme.TopBarColor
+import kotlinx.coroutines.flow.collectLatest
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -83,6 +86,13 @@ fun FTPScreen(onNavigateBack: () -> Unit, ftpViewModel: FTPViewModel) {
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         ftpViewModel.onSelectedImageUriChange(uri)
+    }
+
+    LaunchedEffect(Unit) {
+        ftpViewModel.toastMessage.collectLatest {
+            message ->
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
     }
 
     Scaffold(
@@ -187,9 +197,6 @@ fun FTPScreen(onNavigateBack: () -> Unit, ftpViewModel: FTPViewModel) {
                 }
             }
 
-            if (status == FtpStatus.SYNC_SUCCESS) {
-                Text(text = "Sync successful!", fontSize = 14.sp, color = Color.Green)
-            }
 
             if (status == FtpStatus.SYNC_ERROR) {
                 Text(text = "Sync Error: ${errorMessage ?: "Unknown error"}", fontSize = 14.sp, color = Color.Red)
@@ -297,10 +304,14 @@ fun RowScope.FtpSyncScreen(ftpViewModel: FTPViewModel) { // Pass your ViewModel
     val status by ftpViewModel.status.collectAsState()
 
     // Array of permissions your feature needs
-    val permissionsToRequest = arrayOf(
-        Manifest.permission.READ_MEDIA_IMAGES,
-        Manifest.permission.READ_MEDIA_VIDEO
-    )
+    val permissionsToRequest = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        arrayOf(
+            Manifest.permission.READ_MEDIA_IMAGES,
+            Manifest.permission.READ_MEDIA_VIDEO
+        )
+    } else {
+        arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
+    }
 
     // State to track if permissions have been granted
     var hasPermissions by remember {
@@ -319,10 +330,10 @@ fun RowScope.FtpSyncScreen(ftpViewModel: FTPViewModel) { // Pass your ViewModel
             hasPermissions = permissions.values.all { it }
             if (hasPermissions) {
                 // Permissions granted! Now we can start the sync.
-                ftpViewModel.syncFiles(context) // Or however you trigger the worker
+                ftpViewModel.syncFiles() // Corrected: context is no longer needed here
             } else {
                 // Handle the case where the user denies permissions
-                // Show a message, disable the button, etc.
+                Toast.makeText(context, "Media permissions are required to sync files.", Toast.LENGTH_LONG).show()
             }
         }
     )
@@ -333,7 +344,7 @@ fun RowScope.FtpSyncScreen(ftpViewModel: FTPViewModel) { // Pass your ViewModel
             onClick = {
                 if (hasPermissions) {
                     // If we already have permission, just sync
-                    ftpViewModel.syncFiles(context)
+                    ftpViewModel.syncFiles()
                 } else {
                     // Otherwise, launch the permission request dialog
                     permissionLauncher.launch(permissionsToRequest)

@@ -70,6 +70,9 @@ dependencies {
     implementation "androidx.lifecycle:lifecycle-livedata-ktx:2.8.2"
     implementation "androidx.compose.runtime:runtime-livedata"
     implementation "androidx.lifecycle:lifecycle-runtime-compose:2.8.2"
+    
+    // Updated ML Kit Text Recognition dependency
+    implementation 'com.google.android.gms:play-services-mlkit-text-recognition:19.0.0'
 
     def room_version = "2.6.1"
     implementation "androidx.room:room-runtime:$room_version"
@@ -82,6 +85,7 @@ dependencies {
 
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1"
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3"
 
     implementation "io.coil-kt:coil-compose:2.6.0"
     implementation "commons-net:commons-net:3.11.0"

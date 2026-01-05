@@ -1,12 +1,15 @@
 package com.lasertrac.app.data.repository
 
+import android.content.Context
 import com.lasertrac.app.db.SnapDao
 import com.lasertrac.app.db.SnapDetail
+import com.lasertrac.app.ui.ftp.FTPManager
 import kotlinx.coroutines.flow.Flow
 
 class SnapRepository(
     private val snapDao: SnapDao,
-    private val localMediaRepository: LocalMediaRepository
+    private val localMediaRepository: LocalMediaRepository,
+    private val context: Context
 ) {
 
     fun getLocalDbSnaps(): Flow<List<SnapDetail>> = snapDao.getAllSnaps()
@@ -17,6 +20,10 @@ class SnapRepository(
 
     suspend fun getLocalMediaSnaps(): Result<List<SnapDetail>> {
         return localMediaRepository.getLocalMediaSnaps()
+    }
+
+    suspend fun refreshSnapsFromFTP(): Result<Int> {
+        return FTPManager.syncFromRepository(context, snapDao)
     }
 
     /**

@@ -1,8 +1,9 @@
 package com.lasertrac.app
 
+import android.app.Application
 import android.content.ContentUris
-import android.content.Context
 import android.provider.MediaStore
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -49,7 +50,7 @@ data class SnapsUiState(
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class SnapsViewModel(private val repository: SnapRepository, private val context: Context) : ViewModel() {
+class SnapsViewModel(private val repository: SnapRepository, application: Application) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(SnapsUiState())
     val uiState: StateFlow<SnapsUiState> = _uiState.asStateFlow()
@@ -86,6 +87,34 @@ class SnapsViewModel(private val repository: SnapRepository, private val context
 
         // Initial data load
         refreshSnaps(isInitial = true)
+    }
+
+    fun refreshSnapsFromFTP() {
+        if (_uiState.value.isLoading) return // Prevent concurrent refreshes
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+
+            val result: Result<Int>? = withTimeoutOrNull(30000L) { // 30 second timeout for FTP
+                repository.refreshSnapsFromFTP()
+            }
+
+            if (result == null) {
+                _refreshEvent.emit("FTP Sync timed out.")
+                _uiState.update { it.copy(isLoading = false) }
+            } else {
+                result.fold(
+                    onSuccess = {
+                        val message = if (it > 0) "$it new snaps synced from FTP." else "No new snaps found on FTP."
+                        _refreshEvent.emit(message)
+                    },
+                    onFailure = {
+                        _refreshEvent.emit("FTP Sync failed: ${it.message}")
+                    }
+                )
+                _uiState.update { it.copy(isLoading = false) }
+            }
+        }
     }
 
     fun refreshSnaps(isInitial: Boolean = false) {
@@ -127,7 +156,12 @@ class SnapsViewModel(private val repository: SnapRepository, private val context
     }
 
     fun onDateSelected(dateMillis: Long?) {
-        _selectedDate.value = dateMillis
+        if (_selectedDate.value == dateMillis) {
+            // If the same date is selected, force a refresh of the snaps.
+            refreshSnaps()
+        } else {
+            _selectedDate.value = dateMillis
+        }
     }
 
     fun onSearchQueryChanged(query: String) {
@@ -140,6 +174,7 @@ class SnapsViewModel(private val repository: SnapRepository, private val context
             repository.deleteSnaps(snapsToDelete.map { it.id })
 
             // Delete files from storage
+            val context = getApplication<Application>().applicationContext
             for (snap in snapsToDelete) {
                 try {
                     if (snap.id.startsWith("local_")) {
@@ -155,7 +190,6 @@ class SnapsViewModel(private val repository: SnapRepository, private val context
             clearSelectionMode()
         }
     }
-
 
     fun toggleSelection(snapId: String) {
         _uiState.update { state ->
@@ -193,11 +227,11 @@ class SnapsViewModel(private val repository: SnapRepository, private val context
     }
 }
 
-class SnapsViewModelFactory(private val repository: SnapRepository, private val context: Context) : ViewModelProvider.Factory {
+class SnapsViewModelFactory(private val repository: SnapRepository, private val application: Application) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(SnapsViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return SnapsViewModel(repository, context) as T
+            return SnapsViewModel(repository, application) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

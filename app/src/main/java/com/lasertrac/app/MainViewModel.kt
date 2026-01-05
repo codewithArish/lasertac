@@ -50,9 +50,9 @@ class MainViewModel(private val snapLocationDao: SnapLocationDao) : ViewModel() 
             policeStation = this.selectedPoliceArea ?: "N/A",
             address = this.fullAddress ?: "N/A",
             uploadStatus = "Pending",
-            mainImage = this.imageUri,
-            licensePlateImage = this.imageUri,
-            mapImage = null, // Placeholder
+            mainImage = this.imageUri ?: "",
+            licensePlateImage = this.imageUri ?: "",
+            mapImage = "", // Placeholder, must be non-null
             violationSummary = "", // Placeholder
             violationManagementLink = "", // Placeholder
             accessLink = "", // Placeholder

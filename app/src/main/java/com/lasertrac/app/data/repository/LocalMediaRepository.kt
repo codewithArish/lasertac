@@ -23,7 +23,7 @@ class LocalMediaRepository(private val context: Context) {
                 MediaStore.Images.Media.DATE_MODIFIED
             )
             val selection = "${MediaStore.Images.Media.RELATIVE_PATH} LIKE ?"
-            val selectionArgs = arrayOf("%Pictures/com.lasertrac%")
+            val selectionArgs = arrayOf("%Pictures/LaserTrac%")
             val sortOrder = "${MediaStore.Images.Media.DATE_MODIFIED} DESC"
 
             context.contentResolver.query(
@@ -68,8 +68,8 @@ class LocalMediaRepository(private val context: Context) {
                             address = "",
                             uploadStatus = "Pending",
                             mainImage = contentUri.toString(),
-                            licensePlateImage = null,
-                            mapImage = null,
+                            licensePlateImage = "",
+                            mapImage = "",
                             violationSummary = "",
                             violationManagementLink = "",
                             accessLink = "",

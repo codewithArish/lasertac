@@ -1,8 +1,16 @@
 package com.lasertrac.app.ui.ftp
 
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.content.ContentValues
 import android.content.Context
-import android.os.Environment
+import android.os.Build
+import android.provider.MediaStore
 import android.util.Log
+import androidx.core.app.NotificationCompat
+import com.lasertrac.app.db.SnapDao
+import com.lasertrac.app.db.SnapDetail
+import com.lasertrac.app.db.SnapStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -10,30 +18,23 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.apache.commons.net.ftp.FTP
 import org.apache.commons.net.ftp.FTPClient
+import org.apache.commons.net.ftp.FTPFile
 import org.apache.commons.net.ftp.FTPReply
-import java.io.File
-import java.io.FileOutputStream
+import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.UUID
 
-/**
- * A singleton manager for handling FTP connections and file synchronization.
- */
 object FTPManager {
 
     private const val TAG = "FTPManager"
     private val ftpClient = FTPClient()
     private val managerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
-    enum class FtpUiState {
-        IDLE, // Koi operation nahi chal raha
-        CONNECTING, // Connection ho raha hai
-        SYNCING, // Preparing to sync / connected and will start
-        SYNCING_PROGRESS, // Actively downloading files (progress updates available)
-        SYNC_COMPLETED, // Sync poora ho gaya
-        ERROR // Koi galti hui
-    }
 
     private val _uiState = MutableStateFlow(FtpUiState.IDLE)
     val uiState: StateFlow<FtpUiState> = _uiState.asStateFlow()
@@ -44,101 +45,198 @@ object FTPManager {
     private val _syncedFileCount = MutableStateFlow(0)
     val syncedFileCount: StateFlow<Int> = _syncedFileCount.asStateFlow()
 
-    /**
-     * Connects to the FTP server and starts the sync process automatically.
-     * Can be triggered manually or automatically.
-     */
-    fun startSync(context: Context) {
-        if (_uiState.value == FtpUiState.CONNECTING || _uiState.value == FtpUiState.SYNCING || _uiState.value == FtpUiState.SYNCING_PROGRESS) return
+    fun startSync(context: Context, snapDao: SnapDao) {
+        if (_uiState.value.isBusy()) return
 
         managerScope.launch {
             _uiState.value = FtpUiState.CONNECTING
             try {
-                // Agar pehle se connected nahi hai to connect karein
                 if (!ftpClient.isConnected) {
-                    val username = CredentialsManager.getUsername(context) ?: ""
-                    val password = CredentialsManager.getPassword(context) ?: ""
-
-                    if (username.isBlank() || password.isBlank()) {
-                        throw IOException("Username or password not set.")
-                    }
-
-                    ftpClient.connect("192.168.10.1", 21)
-                    if (!FTPReply.isPositiveCompletion(ftpClient.replyCode)) {
-                        throw IOException("FTP server refused connection.")
-                    }
-                    if (!ftpClient.login(username, password)) {
-                        throw IOException("FTP login failed.")
-                    }
-                    ftpClient.enterLocalPassiveMode()
-                    ftpClient.setFileType(FTP.BINARY_FILE_TYPE)
+                    connectAndLogin(context)
                 }
 
-                // Connection safal hone par, syncing shuru karein
                 _uiState.value = FtpUiState.SYNCING
-                val downloadedCount = downloadFilesFromServer(context)
+                val downloadedCount = downloadFilesFromServer(context, snapDao)
                 _syncedFileCount.value = downloadedCount
                 _uiState.value = FtpUiState.SYNC_COMPLETED
 
             } catch (e: IOException) {
-                Log.e(TAG, "Connection or sync failed.", e)
+                Log.e(TAG, "Sync failed.", e)
                 _errorMessage.value = e.message ?: "An unknown error occurred."
                 handleConnectionError()
             }
         }
     }
 
-    /**
-     * Downloads files from the /manual_capture/ directory on the FTP server.
-     * Saves them to the device's Pictures/com.lasertrac/ directory.
-     */
-    private suspend fun downloadFilesFromServer(context: Context): Int {
-        val remoteBaseDir = "/manual_capture/"
-        val localDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "com.lasertrac")
+    suspend fun syncFromRepository(context: Context, snapDao: SnapDao): Result<Int> = withContext(Dispatchers.IO) {
+        try {
+            if (!ftpClient.isConnected) {
+                connectAndLogin(context)
+            }
+            val downloadedCount = downloadFilesFromServer(context, snapDao)
+            Result.success(downloadedCount)
+        } catch (e: IOException) {
+            Log.e(TAG, "Sync failed during repository sync.", e)
+            Result.failure(e)
+        }
+    }
 
-        if (!localDir.exists()) {
-            localDir.mkdirs()
+    private suspend fun connectAndLogin(context: Context) = withContext(Dispatchers.IO) {
+        val username = CredentialsManager.getUsername(context) ?: ""
+        val password = CredentialsManager.getPassword(context) ?: ""
+
+        if (username.isBlank() || password.isBlank()) {
+            throw IOException("Username or password not set.")
         }
 
-        // Indicate active progress and reset counter so UI shows real-time progress
-        _uiState.value = FtpUiState.SYNCING_PROGRESS
-        _syncedFileCount.value = 0
+        ftpClient.connect("192.168.10.1", 21)
+        if (!FTPReply.isPositiveCompletion(ftpClient.replyCode)) {
+            throw IOException("FTP server refused connection.")
+        }
+        if (!ftpClient.login(username, password)) {
+            throw IOException("FTP login failed.")
+        }
+        ftpClient.enterLocalPassiveMode()
+        ftpClient.setFileType(FTP.BINARY_FILE_TYPE)
+    }
 
+    private suspend fun downloadFilesFromServer(context: Context, snapDao: SnapDao): Int = withContext(Dispatchers.IO) {
+        val remoteBaseDir = "/manual_capture/"
         var downloadedCount = 0
-        try {
-            val dateDirectories = ftpClient.listFiles(remoteBaseDir) ?: emptyArray()
 
-            for (dir in dateDirectories) {
-                if (dir == null || !dir.isDirectory) continue
+        val remoteItems = ftpClient.listFiles(remoteBaseDir) ?: emptyArray()
+        for (item in remoteItems) {
+            if (item == null) continue
+            downloadedCount += processRemoteItem(context, item, remoteBaseDir, snapDao)
+        }
+        downloadedCount
+    }
 
-                val remoteDirPath = "$remoteBaseDir${dir.name}/"
-                val filesToDownload = ftpClient.listFiles(remoteDirPath) ?: emptyArray()
-
-                for (ftpFile in filesToDownload) {
-                    if (ftpFile == null || ftpFile.isDirectory) continue
-
-                    val localFile = File(localDir, ftpFile.name)
-
-                    // Agar file pehle se मौजूद nahi hai, to download karein
-                    if (!localFile.exists()) {
-                        val remoteFilePath = "$remoteDirPath${ftpFile.name}"
-                        FileOutputStream(localFile).use { outputStream ->
-                            if (ftpClient.retrieveFile(remoteFilePath, outputStream)) {
-                                downloadedCount++
-                                _syncedFileCount.value = downloadedCount // emit progress immediately
-                                Log.i(TAG, "Downloaded: ${ftpFile.name} (Progress: $downloadedCount)")
-                            } else {
-                                Log.w(TAG, "Failed to download: ${ftpFile.name}")
-                            }
-                        }
-                    }
+    private suspend fun processRemoteItem(context: Context, item: FTPFile, remoteBaseDir: String, snapDao: SnapDao): Int {
+        var count = 0
+        if (item.isDirectory) {
+            val remoteDirPath = "$remoteBaseDir${item.name}/"
+            val filesInDir = ftpClient.listFiles(remoteDirPath) ?: emptyArray()
+            for (ftpFile in filesInDir) {
+                if (ftpFile != null && ftpFile.isFile) {
+                    downloadAndSave(context, ftpFile, remoteDirPath, snapDao).onSuccess { count++ }
                 }
             }
-        } catch (e: IOException) {
-            Log.e(TAG, "Error during file download.", e)
-            throw e // Error ko aage bhej dein taaki UI state update ho sake
+        } else if (item.isFile) {
+            downloadAndSave(context, item, remoteBaseDir, snapDao).onSuccess { count++ }
         }
-        return downloadedCount
+        _syncedFileCount.value += count
+        return count
+    }
+
+    private suspend fun downloadAndSave(context: Context, ftpFile: FTPFile, remotePath: String, snapDao: SnapDao): Result<Unit> = withContext(Dispatchers.IO) {
+        if (snapDao.snapExists(ftpFile.name)) {
+            Log.d(TAG, "File ${ftpFile.name} already exists in database. Skipping.")
+            return@withContext Result.failure(IOException("File already exists"))
+        }
+
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notificationId = ftpFile.name.hashCode()
+        val channelId = "download_channel"
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(channelId, "File Downloads", NotificationManager.IMPORTANCE_LOW)
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val notificationBuilder = NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setContentTitle("Files are fetching")
+            .setContentText(ftpFile.name)
+            .setOngoing(true)
+            .setProgress(100, 0, true)
+
+        notificationManager.notify(notificationId, notificationBuilder.build())
+
+        val remoteFilePath = "$remotePath${ftpFile.name}"
+        val downloadedData: ByteArray?
+
+        try {
+            downloadedData = ftpClient.retrieveFileStream(remoteFilePath)?.use { inputStream ->
+                val outputStream = ByteArrayOutputStream()
+                val buffer = ByteArray(4096)
+                var bytesRead: Int
+                var totalBytesRead = 0L
+
+                while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                    outputStream.write(buffer, 0, bytesRead)
+                    totalBytesRead += bytesRead
+                    val progress = (totalBytesRead * 100 / ftpFile.size).toInt()
+                    notificationBuilder.setProgress(100, progress, false).setContentText("$progress%")
+                    notificationManager.notify(notificationId, notificationBuilder.build())
+                }
+                if (ftpClient.completePendingCommand()) outputStream.toByteArray() else null
+            }
+
+            if (downloadedData == null) {
+                throw IOException("Failed to download file or complete command.")
+            }
+
+            val newSnap = createSnapDetail(ftpFile.name)
+            newSnap.mainImage?.let {
+                saveToMediaStore(context, downloadedData, it)
+                snapDao.insert(newSnap)
+            } ?: throw IOException("SnapDetail was created without a main image.")
+
+            notificationBuilder.setContentTitle("Download completed successfully")
+                .setOngoing(false).setProgress(0, 0, false)
+            notificationManager.notify(notificationId, notificationBuilder.build())
+
+            Result.success(Unit)
+
+        } catch (e: IOException) {
+            Log.e(TAG, "Download failed for ${ftpFile.name}", e)
+            notificationBuilder.setContentTitle("Download failed").setOngoing(false).setProgress(0, 0, false)
+            notificationManager.notify(notificationId, notificationBuilder.build())
+            Result.failure(e)
+        }
+    }
+
+    private fun saveToMediaStore(context: Context, data: ByteArray, fileName: String) {
+        val contentValues = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
+            put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.MediaColumns.RELATIVE_PATH, "Pictures/com.laserTrac")
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+        }
+
+        val resolver = context.contentResolver
+        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+        uri?.let {
+            resolver.openOutputStream(it)?.use { stream -> stream.write(data) }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                contentValues.clear()
+                contentValues.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                resolver.update(it, contentValues, null, null)
+            }
+        } ?: throw IOException("Failed to create MediaStore entry.")
+    }
+
+    private fun createSnapDetail(fileName: String): SnapDetail {
+        val timestamp = System.currentTimeMillis()
+        val date = Date(timestamp)
+        val evidenceDate = SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(date)
+        val dateTime = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(date)
+
+        return SnapDetail(
+            id = "ftp_${UUID.randomUUID()}",
+            regNr = "N/A",
+            evidenceDate = evidenceDate, dateTime = dateTime,
+            status = SnapStatus.PENDING,
+            speed = 0, deviceId = "N/A", operatorId = "N/A", speedLimit = 0, location = "N/A",
+            violationDistance = "N/A", recordNr = "N/A", latitude = "N/A", longitude = "N/A",
+            district = "N/A", policeStation = "N/A", address = "N/A", uploadStatus = "PENDING",
+            mainImage = fileName, // Just store the filename
+            licensePlateImage = "", mapImage = "",
+            violationSummary = "", violationManagementLink = "", accessLink = "", regNrStatus = "N/A"
+        )
     }
 
     private fun handleConnectionError() {
@@ -146,10 +244,8 @@ object FTPManager {
         disconnect()
     }
 
-    /**
-     * Disconnects from the FTP server and resets the state.
-     */
     fun disconnect() {
+        if (!_uiState.value.isBusy()) return
         managerScope.launch {
             try {
                 if (ftpClient.isConnected) {
@@ -159,7 +255,7 @@ object FTPManager {
             } catch (e: IOException) {
                 Log.e(TAG, "Error during disconnect.", e)
             } finally {
-                 if (_uiState.value != FtpUiState.ERROR) {
+                if (_uiState.value != FtpUiState.ERROR) {
                     _uiState.value = FtpUiState.IDLE
                 }
             }

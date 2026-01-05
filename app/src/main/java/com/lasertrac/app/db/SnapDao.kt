@@ -25,4 +25,8 @@ interface SnapDao {
 
     @Query("DELETE FROM snap_details WHERE id IN (:snapIds)")
     suspend fun deleteSnaps(snapIds: List<String>)
+
+    // Corrected query to check for the filename in the 'recordNr' column instead of using LIKE on 'mainImage'.
+    @Query("SELECT EXISTS(SELECT 1 FROM snap_details WHERE recordNr = :fileName LIMIT 1)")
+    suspend fun snapExists(fileName: String): Boolean
 }

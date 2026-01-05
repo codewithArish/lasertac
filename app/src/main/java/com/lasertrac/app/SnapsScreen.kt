@@ -1,9 +1,11 @@
 package com.lasertrac.app
 
+import android.app.Application
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,6 +28,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
@@ -40,7 +43,6 @@ import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MaterialTheme.colorScheme
 import androidx.compose.material3.MaterialTheme.typography
 import androidx.compose.material3.Scaffold
@@ -77,9 +79,11 @@ import com.lasertrac.app.data.repository.LocalMediaRepository
 import com.lasertrac.app.data.repository.SnapRepository
 import com.lasertrac.app.db.AppDatabase
 import com.lasertrac.app.db.SnapDetail
-import com.lasertrac.app.db.SnapStatus
 import com.lasertrac.app.ui.theme.TextColorLight
 import com.lasertrac.app.ui.theme.TopBarColor
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.flow.collectLatest
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -90,17 +94,18 @@ fun SnapsScreen(onNavigateBack: () -> Unit) {
     val snapRepository = remember {
         SnapRepository(
             snapDao = appDatabase.snapDao(),
-            localMediaRepository = LocalMediaRepository(context)
+            localMediaRepository = LocalMediaRepository(context),
+            context = context
         )
     }
-    val viewModel: SnapsViewModel = viewModel(factory = SnapsViewModelFactory(snapRepository, context))
+    val viewModel: SnapsViewModel = viewModel(factory = SnapsViewModelFactory(snapRepository, context.applicationContext as Application))
 
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     var showDatePicker by remember { mutableStateOf(false) }
     val datePickerState = rememberDatePickerState(
         initialSelectedDateMillis = uiState.selectedDateMillis,
         yearRange = IntRange(2000, java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)),
-        selectableDates = object : androidx.compose.material3.SelectableDates {
+        selectableDates = object : SelectableDates {
             override fun isSelectableDate(utcTimeMillis: Long): Boolean {
                 // Only allow dates up to today (disable future dates)
                 val today = java.util.Calendar.getInstance().apply {
@@ -153,7 +158,8 @@ fun SnapsScreen(onNavigateBack: () -> Unit) {
                     onNavigateBack = onNavigateBack,
                     onCalendarClick = { showDatePicker = true },
                     onInfoClick = { showInfoDialog = true },
-                    onRefresh = { viewModel.refreshSnaps() }
+                    onRefresh = { viewModel.refreshSnaps() },
+                    onSyncFTP = { viewModel.refreshSnapsFromFTP() }
                 )
             }
         }
@@ -232,7 +238,8 @@ private fun NormalTopAppBar(
     onNavigateBack: () -> Unit,
     onCalendarClick: () -> Unit,
     onInfoClick: () -> Unit,
-    onRefresh: () -> Unit
+    onRefresh: () -> Unit,
+    onSyncFTP: () -> Unit
 ) {
     TopAppBar(
         title = {
@@ -276,6 +283,9 @@ private fun NormalTopAppBar(
                     IconButton(onClick = onRefresh) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh Snaps", tint = TextColorLight)
                     }
+                }
+                IconButton(onClick = onSyncFTP) {
+                    Icon(Icons.Default.CloudDownload, contentDescription = "Sync from FTP", tint = TextColorLight)
                 }
                 IconButton(onClick = onSearchToggle) {
                     Icon(Icons.Default.Search, contentDescription = "Search Snaps", tint = TextColorLight)
@@ -364,22 +374,89 @@ private fun SnapCard(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SnapPreviewDialog(snap: SnapDetail, onDismiss: () -> Unit) {
+    // Record when the preview was opened
+    val viewClickedTimeMillis = remember { System.currentTimeMillis() }
+    val viewClickedTimeStr = remember {
+        SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(viewClickedTimeMillis))
+    }
+
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
         Scaffold {
             Column(
-                modifier = Modifier.fillMaxSize().background(colorScheme.background).padding(it)
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(colorScheme.background)
+                    .padding(it)
             ) {
                 TopAppBar(
                     title = { Text("Snap Detail") },
                     navigationIcon = { IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Close") } }
                 )
                 LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    item { AsyncImage(snap.mainImage, "Main Image", Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)), error = rememberVectorPainter(image = Icons.Default.BrokenImage)) }
+                    // Image with overlayed plate rectangle and reg text
+                    item {
+                        Box(modifier = Modifier
+                            .fillMaxWidth()
+                            .height(320.dp)
+                            .clip(RoundedCornerShape(12.dp))) {
+
+                            AsyncImage(
+                                model = snap.mainImage,
+                                contentDescription = "Main Image",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(320.dp)
+                                    .clip(RoundedCornerShape(12.dp)),
+                                contentScale = ContentScale.Crop,
+                                error = rememberVectorPainter(image = Icons.Default.BrokenImage)
+                            )
+
+                            Column(modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(12.dp)) {
+
+                                Text(
+                                    text = snap.regNr.ifBlank { "No Reg Nr" },
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(bottom = 6.dp)
+                                )
+
+                                Box(
+                                    modifier = Modifier
+                                        .size(width = 160.dp, height = 56.dp)
+                                        .border(BorderStroke(2.dp, Color.White), shape = RoundedCornerShape(6.dp))
+                                        .background(Color.Black.copy(alpha = 0.45f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (!snap.licensePlateImage.isNullOrBlank()) {
+                                        AsyncImage(
+                                            model = snap.licensePlateImage,
+                                            contentDescription = "License Plate",
+                                            modifier = Modifier
+                                                .padding(4.dp)
+                                                .fillMaxWidth()
+                                                .height(48.dp),
+                                            contentScale = ContentScale.Fit
+                                        )
+                                    } else {
+                                        Text(
+                                            text = snap.regNr.ifBlank { "N/A" },
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     item { Text("Registration: ${snap.regNr}", fontWeight = FontWeight.Bold) }
                     item { Text("Date & Time: ${snap.dateTime}") }
+                    item { Text("Viewed at: $viewClickedTimeStr") }
                     item { Text("Location: ${snap.address}") }
                     item { Text("Status: ${snap.status.displayName}") }
                 }
